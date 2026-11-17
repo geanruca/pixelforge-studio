@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid } from '@lucide/vue';
+import { Link, usePage } from '@inertiajs/vue3';
+import { ChartColumn, Coins, Images, Sparkles } from '@lucide/vue';
+import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
-import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
 import {
@@ -15,28 +15,21 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { report } from '@/routes/admin';
+import { index as credits } from '@/routes/credits';
+import { index as history } from '@/routes/generations';
 import type { NavItem } from '@/types';
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
-];
+const page = usePage();
 
-const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/vue-starter-kit',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#vue',
-        icon: BookOpen,
-    },
-];
+const mainNavItems = computed<NavItem[]>(() => [
+    { title: 'Generate', href: dashboard(), icon: Sparkles },
+    { title: 'History', href: history(), icon: Images },
+    { title: 'Credits', href: credits(), icon: Coins },
+    ...(page.props.auth.is_admin
+        ? [{ title: 'Admin report', href: report(), icon: ChartColumn }]
+        : []),
+]);
 </script>
 
 <template>
@@ -58,7 +51,6 @@ const footerNavItems: NavItem[] = [
         </SidebarContent>
 
         <SidebarFooter>
-            <NavFooter :items="footerNavItems" />
             <NavUser />
         </SidebarFooter>
     </Sidebar>

@@ -1,6 +1,11 @@
 <script setup lang="ts">
+import { Link, usePage } from '@inertiajs/vue3';
+import { Coins } from '@lucide/vue';
+import { computed } from 'vue';
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { exactUsd, formatUsd } from '@/lib/money';
+import { index as credits } from '@/routes/credits';
 import type { BreadcrumbItem } from '@/types';
 
 withDefaults(
@@ -11,6 +16,9 @@ withDefaults(
         breadcrumbs: () => [],
     },
 );
+
+const page = usePage();
+const balance = computed(() => page.props.auth.user.balance_nanos);
 </script>
 
 <template>
@@ -23,5 +31,15 @@ withDefaults(
                 <Breadcrumbs :breadcrumbs="breadcrumbs" />
             </template>
         </div>
+        <Link
+            :href="credits()"
+            class="ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium tabular-nums transition-colors hover:bg-accent"
+            :title="`Available credits: ${exactUsd(balance)}`"
+            data-test="balance-pill"
+        >
+            <Coins class="size-4 text-muted-foreground" aria-hidden="true" />
+            <span class="sr-only">Available credits:</span>
+            {{ formatUsd(balance, 'down') }}
+        </Link>
     </header>
 </template>
