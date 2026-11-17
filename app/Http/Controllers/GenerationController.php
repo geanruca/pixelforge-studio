@@ -115,6 +115,20 @@ class GenerationController extends Controller
      */
     public function image(Generation $generation): HttpResponse
     {
+        return $this->serveImage($generation);
+    }
+
+    /**
+     * The same image behind a signed, expiring link instead of a session:
+     * what the API and the MCP server hand out as `image_url`.
+     */
+    public function signedImage(Generation $generation): HttpResponse
+    {
+        return $this->serveImage($generation);
+    }
+
+    private function serveImage(Generation $generation): HttpResponse
+    {
         if ($generation->image_path !== null) {
             return Storage::disk(config()->string('pixelforge.image_disk'))->response(
                 $generation->image_path,

@@ -81,7 +81,7 @@ class GenerationSynchronizer
     }
 
     /**
-     * Close a generation that Pixelforge never accepted. `$confirmed` tells
+     * Close a generation that Pixelforge never accepted (a no-op if it has). `$confirmed` tells
      * whether Pixelforge itself rejected it (nothing exists, final for good)
      * or we merely gave up waiting (it may still surface later, in which case
      * the provider's word wins — see {@see movesForward()}).
@@ -91,7 +91,11 @@ class GenerationSynchronizer
         DB::transaction(function () use ($generation, $errorCode, $message, $confirmed): void {
             $locked = Generation::query()->lockForUpdate()->findOrFail($generation->id);
 
-            if ($locked->isFinal()) {
+            // Once Pixelforge has accepted it (a webhook may have told us while
+            // the create call was still in flight), only Pixelforge can say
+            // how it ended; closing it here would refund an image that is
+            // still going to be delivered.
+            if ($locked->isFinal() || $locked->provider_id !== null) {
                 return;
             }
 

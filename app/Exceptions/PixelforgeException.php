@@ -11,12 +11,26 @@ use RuntimeException;
  */
 class PixelforgeException extends RuntimeException
 {
-    /** Rejections the docs promise are temporary and create nothing. */
-    private const array RETRYABLE_CODES = ['rate_limit_exceeded', 'concurrency_limit_exceeded', 'overloaded'];
+    /**
+     * The only answers that close a generation for good: Pixelforge's own
+     * codes for "this request creates nothing and never will". It is an
+     * allowlist on purpose. An error code we do not know is treated as
+     * temporary, because wrongly closing a generation that was in fact
+     * accepted means an image nobody is charged for.
+     */
+    private const array DEFINITIVE_CODES = [
+        'content_policy_violation',
+        'validation_failed',
+        'daily_limit_exceeded',
+        'invalid_api_key',
+        'idempotency_key_reused',
+    ];
 
     public const string CONNECTION_FAILED = 'connection_failed';
 
     public const string UNEXPECTED_RESPONSE = 'unexpected_response';
+
+    public const string CIRCUIT_OPEN = 'circuit_open';
 
     final public function __construct(
         public readonly string $errorCode,
@@ -36,6 +50,31 @@ class PixelforgeException extends RuntimeException
         return new static(self::CONNECTION_FAILED, $message);
     }
 
+    /**
+     * No call was made: the circuit breaker is giving the provider time to recover.
+     */
+    public static function circuitOpen(int $retryAfterSeconds): static
+    {
+        return new static(
+            self::CIRCUIT_OPEN,
+            'The image service is recovering; calls are paused for a moment.',
+            retryAfterSeconds: max(1, $retryAfterSeconds),
+        );
+    }
+
+    /**
+     * Whether this failure says the provider itself is unwell (no answer, an
+     * answer we cannot read, any 5xx including `overloaded`) rather than
+     * healthy and refusing this particular request. Only these trip the
+     * circuit breaker.
+     */
+    public function indicatesUnhealthyProvider(): bool
+    {
+        return $this->errorCode === self::CONNECTION_FAILED
+            || $this->errorCode === self::UNEXPECTED_RESPONSE
+            || ($this->httpStatus !== null && $this->httpStatus >= 500);
+    }
+
     public static function unexpected(string $message, ?int $httpStatus = null): static
     {
         return new static(self::UNEXPECTED_RESPONSE, $message, $httpStatus);
@@ -51,8 +90,7 @@ class PixelforgeException extends RuntimeException
         return $this->httpStatus !== null
             && $this->httpStatus >= 400
             && $this->httpStatus < 500
-            && $this->errorCode !== self::UNEXPECTED_RESPONSE
-            && ! in_array($this->errorCode, self::RETRYABLE_CODES, true);
+            && in_array($this->errorCode, self::DEFINITIVE_CODES, true);
     }
 
     /**

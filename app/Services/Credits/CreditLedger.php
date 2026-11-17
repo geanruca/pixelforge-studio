@@ -25,8 +25,10 @@ use Illuminate\Support\Facades\DB;
  * worst-case price, so the user can never spend credits they do not have even
  * though the real price is unknown until completion. Reaching a final state
  * releases the hold and, only if it succeeded, charges the actual price.
- * Each step is idempotent: unique indexes on `(generation_id, type)` make a
- * second hold, release or charge of the same generation impossible.
+ * Releasing and charging are idempotent (repeating them is a no-op), and
+ * unique indexes on `(generation_id, type)` make a second hold, release or
+ * charge of the same generation impossible even for code that bypasses this
+ * class.
  */
 class CreditLedger
 {

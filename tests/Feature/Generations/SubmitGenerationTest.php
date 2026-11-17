@@ -6,6 +6,8 @@ use App\Enums\GenerationStatus;
 use App\Enums\LedgerEntryType;
 use App\Jobs\SubmitGeneration;
 use App\Models\Generation;
+use App\Services\Pixelforge\PixelforgeClient;
+use App\Services\Resilience\CircuitBreaker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -147,6 +149,7 @@ class SubmitGenerationTest extends TestCase
         foreach ([2, 4, 8, 16, 32] as $delay) {
             $this->runJob($generation)->assertReleased($delay);
             $this->assertSame(GenerationStatus::Queued, $generation->refresh()->status);
+            $this->travel($delay)->seconds();
         }
 
         // The sixth refusal is the last: stop hammering a struggling provider.
@@ -156,7 +159,7 @@ class SubmitGenerationTest extends TestCase
         $this->assertSame(GenerationStatus::Failed, $generation->status);
         $this->assertSame('submission_timeout', $generation->error_code);
         $this->assertFalse($generation->outcome_confirmed);
-        $this->assertStringContainsString('not charged', $generation->failureMessage());
+        $this->assertStringContainsString('credits were returned', $generation->failureMessage());
         $this->assertSame(1_000_000_000, $user->refresh()->balance_nanos);
         $this->assertLedgerMatchesBalance($user);
         Http::assertSentCount(SubmitGeneration::MAX_SUBMISSION_FAILURES);
@@ -198,6 +201,62 @@ class SubmitGenerationTest extends TestCase
             'bad api key' => [401, 'invalid_api_key'],
             'idempotency key reused with other parameters' => [409, 'idempotency_key_reused'],
         ];
+    }
+
+    public function test_an_error_code_we_do_not_know_is_never_treated_as_final(): void
+    {
+        $user = $this->userWithCredits(1);
+        $generation = $this->heldGeneration($user, submitted: false);
+        // Say, "the request with this idempotency key is still in progress".
+        $this->fakeRejection(409, 'request_in_progress');
+
+        $this->runJob($generation)->assertReleased(2);
+
+        $generation->refresh();
+        $this->assertSame(GenerationStatus::Queued, $generation->status);
+        $this->assertSame(1, $this->ledgerCount($generation, LedgerEntryType::Hold));
+        $this->assertSame(0, $this->ledgerCount($generation, LedgerEntryType::HoldRelease));
+    }
+
+    public function test_while_the_circuit_is_open_the_job_waits_without_calling_or_counting_a_failure(): void
+    {
+        $generation = $this->heldGeneration($this->userWithCredits(1), submitted: false);
+        $breaker = app(CircuitBreaker::class);
+        foreach (range(1, 5) as $ignored) {
+            $breaker->recordFailure(PixelforgeClient::NAME);
+        }
+        Http::fake();
+
+        $this->runJob($generation)->assertReleased(30);
+
+        Http::assertNothingSent();
+        $generation->refresh();
+        $this->assertSame(GenerationStatus::Queued, $generation->status);
+        $this->assertSame(0, $generation->submission_failures);
+    }
+
+    public function test_giving_up_does_not_close_a_generation_a_webhook_already_bound_to_the_provider(): void
+    {
+        Queue::fake();
+        $user = $this->userWithCredits(1);
+        $generation = $this->heldGeneration($user, ['submission_failures' => 5], submitted: false);
+
+        Http::fake(function () use ($generation) {
+            // Pixelforge accepted an earlier, timed-out attempt: its webhook lands mid-call…
+            $this->deliverWebhook($this->webhookEvent(
+                'generation.processing',
+                $this->providerGeneration($generation, 'processing', ['id' => 'gen_accepted']),
+            ))->assertOk();
+
+            // …and this attempt is refused for the sixth and last time.
+            return Http::response(['error' => ['code' => 'overloaded', 'message' => 'Busy']], 503);
+        });
+
+        $this->runJob($generation);
+
+        $generation->refresh();
+        $this->assertSame(GenerationStatus::Processing, $generation->status, 'Only Pixelforge may end a generation it accepted.');
+        $this->assertSame(0, $this->ledgerCount($generation, LedgerEntryType::HoldRelease));
     }
 
     #[DataProvider('definitiveRejections')]

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Reports;
 
+use App\Contracts\ImageProvider;
 use App\Enums\GenerationStatus;
 use App\Exceptions\PixelforgeException;
 use App\Models\Generation;
-use App\Services\Pixelforge\PixelforgeClient;
 use App\Support\Money;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -24,7 +24,7 @@ use InvalidArgumentException;
  */
 class SpendReport
 {
-    public function __construct(private readonly PixelforgeClient $client) {}
+    public function __construct(private readonly ImageProvider $client) {}
 
     /**
      * @return array{

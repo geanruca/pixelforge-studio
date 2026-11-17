@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Sanctum\HasApiTokens;
 
 /**
  * @property int $id
@@ -25,6 +26,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
  * @property string|null $remember_token
+ * @property bool $is_admin
  * @property int $balance_nanos Available credits in nanodollars; only {@see CreditLedger} changes it.
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -34,13 +36,14 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable implements PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * @var array<string, mixed>
      */
     protected $attributes = [
         'balance_nanos' => 0,
+        'is_admin' => false,
     ];
 
     /**
@@ -55,6 +58,7 @@ class User extends Authenticatable implements PasskeyUser
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'balance_nanos' => 'integer',
+            'is_admin' => 'boolean',
         ];
     }
 
@@ -75,10 +79,11 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
-     * Operators who may open the cost and profit report.
+     * Operators who may open the cost and profit report. Granted only with
+     * `php artisan operator:grant`, never from anything a visitor controls.
      */
     public function isAdmin(): bool
     {
-        return in_array(strtolower($this->email), config()->array('pixelforge.admin_emails'), true);
+        return $this->is_admin;
     }
 }

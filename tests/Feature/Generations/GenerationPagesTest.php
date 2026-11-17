@@ -126,6 +126,22 @@ class GenerationPagesTest extends TestCase
             ->assertJsonPath('price.expected', self::EXPECTED_PRICE);
     }
 
+    public function test_pricing_that_is_too_old_is_not_trusted_to_size_a_hold(): void
+    {
+        $user = $this->userWithCredits(1);
+        $query = ['characters' => 20, 'size' => '1024x1024', 'quality' => 'medium', 'reference_images' => 0];
+        $this->actingAs($user)->getJson(route('generations.estimate', $query))->assertOk();
+        $this->pixelforgeGoesDown();
+
+        $this->travel(5)->hours();
+        $this->actingAs($user)->getJson(route('generations.estimate', $query))->assertOk();
+
+        $this->travel(2)->hours();
+        $this->actingAs($user)->getJson(route('generations.estimate', $query))->assertServiceUnavailable();
+        $this->actingAs($user)->post(route('generations.store'), $this->validInput())->assertSessionHasErrors('credits');
+        $this->assertSame(0, Generation::query()->count());
+    }
+
     public function test_the_estimate_says_so_when_pricing_was_never_available(): void
     {
         $this->pixelforgeGoesDown();

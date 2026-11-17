@@ -38,6 +38,17 @@ return [
     'reconcile_after_seconds' => (int) env('PIXELFORGE_RECONCILE_AFTER', 45),
 
     /*
+    | Circuit breaker in front of the provider: after this many consecutive
+    | failures that point at the provider being unwell (timeouts, 5xx), calls
+    | are paused for the cooldown, then probed.
+    */
+
+    'circuit_breaker' => [
+        'failure_threshold' => (int) env('PIXELFORGE_CIRCUIT_FAILURES', 5),
+        'cooldown_seconds' => (int) env('PIXELFORGE_CIRCUIT_COOLDOWN', 30),
+    ],
+
+    /*
     |--------------------------------------------------------------------------
     | Billing
     |--------------------------------------------------------------------------
@@ -54,11 +65,5 @@ return [
 
     /** Disk where finished images are kept, since provider URLs expire after 24 hours. */
     'image_disk' => env('PIXELFORGE_IMAGE_DISK', 'local'),
-
-    /** Comma-separated emails allowed to open the operator report. */
-    'admin_emails' => array_values(array_filter(array_map(
-        static fn (string $email): string => strtolower(trim($email)),
-        explode(',', (string) env('ADMIN_EMAILS', '')),
-    ))),
 
 ];

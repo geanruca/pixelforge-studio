@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $user_id
  * @property string $idempotency_key Sent to Pixelforge so a retried submission never creates a second generation.
+ * @property string|null $client_idempotency_key The `Idempotency-Key` an API client sent, unique per user.
  * @property string|null $provider_id Pixelforge's `gen_…` id, null until the submission is accepted.
  * @property GenerationStatus $status
  * @property bool $outcome_confirmed True once Pixelforge itself confirmed the final state; such a state never changes.
@@ -52,7 +53,7 @@ use Illuminate\Support\Carbon;
     'user_id', 'idempotency_key', 'provider_id', 'status', 'outcome_confirmed', 'prompt', 'size', 'quality',
     'reference_images', 'estimated_price_nanos', 'reserved_nanos', 'provider_cost_nanos', 'price_nanos', 'usage',
     'error_code', 'error_message', 'image_url', 'image_url_expires_at', 'image_path', 'submitted_at', 'started_at',
-    'completed_at', 'last_synced_at', 'submission_failures',
+    'completed_at', 'last_synced_at', 'submission_failures', 'client_idempotency_key',
 ])]
 class Generation extends Model
 {
@@ -93,6 +94,32 @@ class Generation extends Model
         $query->whereNotNull('provider_id')->whereIn('status', GenerationStatus::active());
     }
 
+    /**
+     * Generations Pixelforge knows about whose final state it has not yet
+     * confirmed to us: everything in flight, plus any we gave up on locally
+     * that turned out to have been accepted. These are what polling must keep
+     * asking about.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeAwaitingProviderOutcome(Builder $query): void
+    {
+        $query->whereNotNull('provider_id')->where('outcome_confirmed', false);
+    }
+
+    /**
+     * Generations Pixelforge has not accepted and that no longer have a
+     * submission job that could still be trying.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeAbandonedBeforeSubmission(Builder $query): void
+    {
+        $query->whereNull('provider_id')
+            ->where('status', GenerationStatus::Queued)
+            ->where('created_at', '<', now()->subMinutes(config()->integer('pixelforge.submission_window_minutes') + 5));
+    }
+
     public function isFinal(): bool
     {
         return $this->status->isFinal();
@@ -120,7 +147,7 @@ class Generation extends Model
             'internal_error' => 'The image service hit an internal error. You were not charged — trying again usually works.',
             'daily_limit_exceeded' => 'The daily generation limit has been reached. You were not charged — please try again tomorrow (UTC).',
             'validation_failed' => 'The image service rejected this request as invalid. You were not charged.',
-            'submission_timeout' => 'The image service was too busy to accept this request. You were not charged — please try again.',
+            'submission_timeout' => 'The image service was too busy to accept this request. Your reserved credits were returned — please try again.',
             'invalid_api_key' => 'Image generation is temporarily unavailable. You were not charged.',
             default => 'This generation failed. You were not charged.',
         };

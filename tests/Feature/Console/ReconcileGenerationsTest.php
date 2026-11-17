@@ -6,6 +6,7 @@ use App\Console\Commands\ReconcileGenerations;
 use App\Enums\GenerationStatus;
 use App\Jobs\StoreGenerationImage;
 use App\Models\Generation;
+use App\Services\Generations\GenerationSynchronizer;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\RequestException;
@@ -121,6 +122,70 @@ class ReconcileGenerationsTest extends TestCase
 
         Queue::assertPushed(StoreGenerationImage::class, 1);
         Queue::assertPushed(StoreGenerationImage::class, fn (StoreGenerationImage $job): bool => $job->generationId === $missing->id);
+    }
+
+    public function test_a_generation_whose_submission_job_was_lost_is_closed_and_refunded(): void
+    {
+        $user = $this->userWithCredits(1);
+        $lost = $this->heldGeneration($user, ['created_at' => now()->subMinutes(21)], submitted: false);
+        $stillTrying = $this->heldGeneration($user, ['created_at' => now()->subMinutes(10)], submitted: false);
+        Http::fake();
+
+        $this->artisan(ReconcileGenerations::class)->assertSuccessful();
+
+        $lost->refresh();
+        $this->assertSame(GenerationStatus::Failed, $lost->status);
+        $this->assertSame('submission_timeout', $lost->error_code);
+        $this->assertFalse($lost->outcome_confirmed);
+        $this->assertSame(GenerationStatus::Queued, $stillTrying->refresh()->status);
+        $this->assertSame(1_000_000_000 - $stillTrying->reserved_nanos, $user->refresh()->balance_nanos);
+        $this->assertLedgerMatchesBalance($user);
+
+        // Running again changes nothing.
+        $this->artisan(ReconcileGenerations::class)->assertSuccessful();
+        $this->assertSame(1_000_000_000 - $stillTrying->reserved_nanos, $user->refresh()->balance_nanos);
+    }
+
+    public function test_a_generation_we_gave_up_on_but_pixelforge_accepted_is_still_polled_and_billed(): void
+    {
+        $user = $this->userWithCredits(1);
+        $generation = $this->heldGeneration($user, submitted: false);
+        app(GenerationSynchronizer::class)->failLocally($generation, 'submission_timeout', 'Too busy.', confirmed: false);
+
+        // A late `processing` webhook reveals that Pixelforge had accepted it…
+        $this->deliverWebhook($this->webhookEvent(
+            'generation.processing',
+            $this->providerGeneration($generation, 'processing', ['id' => 'gen_late']),
+        ))->assertOk();
+        $this->assertSame('gen_late', $generation->refresh()->provider_id);
+
+        // …and its final webhook never arrives. Polling must still find it.
+        $this->travel(2)->minutes();
+        Http::fake(['*/generations/gen_late' => Http::response($this->providerGeneration($generation, 'succeeded'))]);
+        $this->artisan(ReconcileGenerations::class)->assertSuccessful();
+
+        $generation->refresh();
+        $this->assertSame(GenerationStatus::Succeeded, $generation->status);
+        $this->assertSame(1_000_000_000 - self::USAGE_PRICE_NANOS, $user->refresh()->balance_nanos);
+        $this->assertLedgerMatchesBalance($user);
+    }
+
+    public function test_generations_that_keep_failing_to_sync_do_not_starve_the_others(): void
+    {
+        $user = $this->userWithCredits(1);
+        $stuck = $this->heldGeneration($user, ['last_synced_at' => now()->subMinutes(9)]);
+        $waiting = $this->heldGeneration($user, ['last_synced_at' => now()->subMinutes(5)]);
+        Http::fake([
+            "*/generations/{$stuck->provider_id}" => Http::response('<html>broken</html>', 200),
+            "*/generations/{$waiting->provider_id}" => Http::response($this->providerGeneration($waiting, 'succeeded')),
+        ]);
+
+        // Only one per run: the stuck one goes first, fails, and must then queue behind the other.
+        $this->artisan(ReconcileGenerations::class, ['--limit' => 1])->assertSuccessful();
+        $this->assertSame(GenerationStatus::Queued, $waiting->refresh()->status);
+
+        $this->artisan(ReconcileGenerations::class, ['--limit' => 1])->assertSuccessful();
+        $this->assertSame(GenerationStatus::Succeeded, $waiting->refresh()->status);
     }
 
     public function test_it_is_scheduled_every_minute(): void

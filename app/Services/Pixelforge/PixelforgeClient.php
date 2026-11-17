@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Pixelforge;
 
+use App\Contracts\ImageProvider;
 use App\Exceptions\PixelforgeException;
 use App\Models\Generation;
 use Carbon\CarbonInterface;
@@ -14,13 +15,21 @@ use Illuminate\Http\Client\Response;
 use InvalidArgumentException;
 
 /**
- * The only class that talks HTTP to Pixelforge. It never retries on its own:
+ * The Pixelforge adapter of {@see ImageProvider}, and the only class that
+ * talks HTTP to Pixelforge. It never retries on its own:
  * it reports what happened as a {@see PixelforgeException} and the caller (a
  * queued job) decides whether and when to try again, honouring `Retry-After`.
  */
-class PixelforgeClient
+class PixelforgeClient implements ImageProvider
 {
+    public const string NAME = 'pixelforge';
+
     public function __construct(private readonly Http $http) {}
+
+    public function name(): string
+    {
+        return self::NAME;
+    }
 
     /**
      * Submit a generation. The generation's own idempotency key is sent, so

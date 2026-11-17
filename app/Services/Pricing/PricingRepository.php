@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Pricing;
 
+use App\Contracts\ImageProvider;
 use App\Exceptions\PixelforgeException;
-use App\Services\Pixelforge\PixelforgeClient;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -20,15 +20,23 @@ class PricingRepository
 
     private const string LAST_KNOWN_KEY = 'pixelforge.pricing.last-known';
 
+    /**
+     * How long a pricing table may stand in for an unreachable Pixelforge.
+     * Holds are sized from it, so it must not be arbitrarily old: past this,
+     * new generations are refused rather than reserved at stale prices.
+     */
+    private const int LAST_KNOWN_SECONDS = 6 * 60 * 60;
+
     public function __construct(
-        private readonly PixelforgeClient $client,
+        private readonly ImageProvider $client,
         private readonly Cache $cache,
     ) {}
 
     /**
      * Returns the pricing table, refreshing it when the cached copy expired.
-     * When Pixelforge cannot be reached the last table we saw is used instead,
-     * so a provider blip does not take the generate page down.
+     * When Pixelforge cannot be reached the last table we saw (at most six
+     * hours old) is used instead, so a provider blip does not take the
+     * generate page down.
      *
      * @throws PixelforgeException when pricing is unreachable and was never fetched
      */
@@ -61,7 +69,7 @@ class PricingRepository
         }
 
         $this->cache->put(self::FRESH_KEY, $pricing, config()->integer('pixelforge.pricing_cache_seconds'));
-        $this->cache->forever(self::LAST_KNOWN_KEY, $pricing);
+        $this->cache->put(self::LAST_KNOWN_KEY, $pricing, self::LAST_KNOWN_SECONDS);
 
         return $table;
     }

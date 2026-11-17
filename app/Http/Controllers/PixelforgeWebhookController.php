@@ -84,7 +84,14 @@ class PixelforgeWebhookController extends Controller
 
                 return $outcome;
             });
-        } catch (UniqueConstraintViolationException) {
+        } catch (UniqueConstraintViolationException $exception) {
+            // Only a second delivery of an event we already hold is a
+            // duplicate. Any other unique violation is a real failure and
+            // must reach Pixelforge as one, so that it retries.
+            if (! WebhookEvent::query()->where('event_id', $eventId)->exists()) {
+                throw $exception;
+            }
+
             return response()->json(['received' => true, 'duplicate' => true]);
         } catch (InvalidArgumentException $exception) {
             Log::error('Pixelforge webhook carried an unusable generation', [

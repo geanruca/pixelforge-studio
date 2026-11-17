@@ -177,6 +177,17 @@ class GenerationSynchronizerTest extends TestCase
         $this->assertSame(1_000_000_000, $user->refresh()->balance_nanos);
     }
 
+    public function test_a_generation_the_provider_accepted_cannot_be_closed_locally(): void
+    {
+        $user = $this->userWithCredits(1);
+        $generation = $this->heldGeneration($user);
+
+        $this->synchronizer->failLocally($generation, 'submission_timeout', 'Too busy.', confirmed: false);
+
+        $this->assertSame(GenerationStatus::Queued, $generation->status);
+        $this->assertSame(1_000_000_000 - $generation->reserved_nanos, $user->refresh()->balance_nanos);
+    }
+
     public function test_failing_locally_twice_releases_the_hold_once(): void
     {
         $user = $this->userWithCredits(1);

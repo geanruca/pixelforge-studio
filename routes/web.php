@@ -23,4 +23,8 @@ Route::middleware('auth')->group(function () {
     Route::get('admin/report', ReportController::class)->can('view-admin-report')->name('admin.report');
 });
 
+Route::get('generations/{generation}/image/signed', [GenerationController::class, 'signedImage'])
+    ->middleware('signed')
+    ->name('generations.image.signed');
+
 require __DIR__.'/settings.php';

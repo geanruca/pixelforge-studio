@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Contracts\ImageProvider;
 use App\Exceptions\PixelforgeException;
 use App\Models\Generation;
 use App\Services\Generations\GenerationSynchronizer;
-use App\Services\Pixelforge\PixelforgeClient;
 use DateTimeInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -43,7 +43,7 @@ class SubmitGeneration implements ShouldQueue
     /** Attempts Pixelforge may refuse (overload, rate limit, no answer) before we stop. */
     public const int MAX_SUBMISSION_FAILURES = 6;
 
-    private const string GAVE_UP_MESSAGE = 'The image service was too busy to accept this request. You were not charged — please try again.';
+    private const string GAVE_UP_MESSAGE = 'The image service was too busy to accept this request. Your reserved credits were returned — please try again.';
 
     /** Attempts are bounded by {@see retryUntil()}, not by a count. */
     public int $tries = 0;
@@ -52,6 +52,18 @@ class SubmitGeneration implements ShouldQueue
 
     public int $timeout = 30;
 
+    /**
+     * Seconds between retries after an unexpected exception (a database
+     * blip while applying the response), so three quick crashes in a row do
+     * not use up `maxExceptions`.
+     *
+     * @return list<int>
+     */
+    public function backoff(): array
+    {
+        return [2, 10, 30];
+    }
+
     public function __construct(public readonly int $generationId) {}
 
     public function retryUntil(): DateTimeInterface
@@ -59,7 +71,7 @@ class SubmitGeneration implements ShouldQueue
         return now()->addMinutes(config()->integer('pixelforge.submission_window_minutes'));
     }
 
-    public function handle(PixelforgeClient $client, GenerationSynchronizer $synchronizer): void
+    public function handle(ImageProvider $client, GenerationSynchronizer $synchronizer): void
     {
         $generation = Generation::query()->find($this->generationId);
 
@@ -129,7 +141,8 @@ class SubmitGeneration implements ShouldQueue
             return;
         }
 
-        if ($exception->errorCode === 'concurrency_limit_exceeded') {
+        // Neither is a failed attempt: a slot is busy, or the circuit breaker did not even call.
+        if (in_array($exception->errorCode, ['concurrency_limit_exceeded', PixelforgeException::CIRCUIT_OPEN], true)) {
             $this->release(min(self::MAX_RETRY_SECONDS, $exception->retryAfterSeconds ?? self::DEFAULT_RETRY_SECONDS));
 
             return;
