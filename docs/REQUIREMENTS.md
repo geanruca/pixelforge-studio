@@ -58,7 +58,7 @@ Legend: ✅ implemented and covered by an automated test · 🔎 verified by han
 | 3.7 | ✅ Expired and never copied: "no longer available" placeholder, not a broken image | `GenerationResource`, `Index.vue` (`@error`) | `…::test_an_expired_image_that_was_never_copied_is_reported_as_expired_not_broken` |
 | 3.8 | ✅ Failed copy is retried (job backoff, then the reconcile command) | `StoreGenerationImage`, `ReconcileGenerations` | `…ReconcileGenerationsTest::test_it_retries_image_copies_that_never_landed_while_the_url_still_works`, `…::test_the_image_job_fails_loudly_so_it_is_retried_when_the_download_fails` |
 | 3.9 | ✅ Failures explain themselves in plain words and say "not charged" | `Generation::failureMessage` | `…GenerationPagesTest::test_a_failed_generation_explains_itself_and_shows_no_charge` |
-| 3.10 | ✅ Not yet accepted by Pixelforge is shown as "waiting for a free slot" | `GenerationResource` | `…::test_a_generation_not_yet_accepted_by_pixelforge_is_shown_as_waiting` |
+| 3.10 | ✅ Not yet accepted by Pixelforge is shown as "waiting to start" | `GenerationResource` | `…::test_a_generation_not_yet_accepted_by_pixelforge_is_shown_as_waiting` |
 | 3.11 | ✅ "Try again" prefills the form, only from the user's own generation | `GenerationController::create` | `…::test_try_again_prefills_the_form_only_from_the_users_own_generation` |
 
 ## 4. Webhooks
@@ -100,7 +100,8 @@ Legend: ✅ implemented and covered by an automated test · 🔎 verified by han
 | 5.8 | ✅ 2xx with an unreadable body: retried, not failed | client | `test_a_success_response_we_cannot_read_is_retried_not_failed` |
 | 5.9 | ✅ `400 content_policy_violation`, `422 validation_failed`, `429 daily_limit_exceeded`, `401 invalid_api_key`, `409 idempotency_key_reused`: fail at once, hold refunded, clear message | `SubmitGeneration` | `test_definitive_rejections_fail_the_generation_and_refund_the_hold` |
 | 5.10 | ✅ We do not spend requests we know will be refused (3 slots taken) | `Generation::scopeInFlight` | `test_it_does_not_call_pixelforge_while_all_concurrency_slots_are_taken`, `test_finished_generations_do_not_occupy_a_slot` |
-| 5.11 | ✅ Retries stop: after the submission window the generation fails and the hold is refunded | `retryUntil` + `failed()` | `test_giving_up_after_the_submission_window_refunds_the_hold`, `test_the_submission_window_bounds_how_long_it_keeps_trying` |
+| 5.11 | ✅ Overloads / rate limits / timeouts back off exponentially (2, 4, 8, 16, 32 s, never sooner than `Retry-After`) and stop after 6 attempts; the hold is refunded | `SubmitGeneration::handleRejection` | `test_repeated_overloads_back_off_exponentially_then_give_up_and_refund` |
+| 5.11b | ✅ Waiting for a concurrency slot is not a failure: it never counts towards giving up, and is bounded by the 15 minute window instead | `retryUntil` + `failed()` | `test_waiting_for_a_concurrency_slot_never_counts_towards_giving_up`, `test_giving_up_after_the_submission_window_refunds_the_hold`, `test_the_submission_window_bounds_how_long_it_keeps_trying` |
 | 5.12 | ✅ We gave up, but Pixelforge had accepted and later delivers: still billed correctly | `outcome_confirmed` | `GenerationSynchronizerTest::test_a_submission_we_gave_up_on_is_still_billed_if_the_provider_delivered_it` |
 | 5.13 | ✅ A rejection confirmed by Pixelforge can never be reopened | same | `GenerationSynchronizerTest::test_a_rejection_confirmed_by_the_provider_cannot_be_reopened` |
 | 5.14 | ✅ Failure after acceptance (`generation_failed`, `internal_error`): free, hold released | synchronizer | `PixelforgeWebhookTest::test_a_failed_event_releases_the_hold_and_charges_nothing` |
@@ -142,4 +143,4 @@ Legend: ✅ implemented and covered by an automated test · 🔎 verified by han
 | 8.1 | Public GitHub repository | see README |
 | 8.2 | Deployed to a public host, with a few generations left on it | see README |
 | 8.3 | One API key per environment (local and production keys are different) | `.env.example` |
-| 8.4 | 🔎 Live checks with `[fail]`, `[slow]`, `[duplicate]`, `[blocked]`, `[overloaded]` and dashboard resends | see README |
+| 8.4 | 🔎 Live checks with `[fail]`, `[slow]`, `[duplicate]`, `[blocked]`, `[overloaded]`, more than 3 at once, and a dashboard resend | see README |

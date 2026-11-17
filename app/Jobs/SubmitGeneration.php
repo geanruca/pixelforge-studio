@@ -18,11 +18,17 @@ use Throwable;
  * Sends a generation to Pixelforge.
  *
  * Submitting happens in the queue, not in the web request, because Pixelforge
- * regularly says "not now": 3 concurrent generations per account, 60 requests
- * a minute, random 503s. The job waits as long as `Retry-After` asks and tries
- * again, for up to the submission window, while the user already sees their
- * generation as queued. Retrying is safe because every attempt carries the
- * generation's idempotency key.
+ * regularly says "not now", and the two kinds of "not now" are handled
+ * differently:
+ *
+ *  - All 3 concurrency slots are taken. Nothing is wrong: the generation
+ *    simply waits its turn, for as long as the submission window allows.
+ *  - Pixelforge is overloaded, rate limiting us or not answering. The job
+ *    backs off exponentially (never sooner than `Retry-After`) and stops after
+ *    a few attempts, so a struggling provider is not hammered.
+ *
+ * Meanwhile the user already sees their generation as queued. Retrying is
+ * safe because every attempt carries the generation's idempotency key.
  */
 class SubmitGeneration implements ShouldQueue
 {
@@ -33,6 +39,11 @@ class SubmitGeneration implements ShouldQueue
 
     /** Longest single wait, so one bad header cannot park a generation. */
     private const int MAX_RETRY_SECONDS = 60;
+
+    /** Attempts Pixelforge may refuse (overload, rate limit, no answer) before we stop. */
+    public const int MAX_SUBMISSION_FAILURES = 6;
+
+    private const string GAVE_UP_MESSAGE = 'The image service was too busy to accept this request. You were not charged — please try again.';
 
     /** Attempts are bounded by {@see retryUntil()}, not by a count. */
     public int $tries = 0;
@@ -97,7 +108,7 @@ class SubmitGeneration implements ShouldQueue
         app(GenerationSynchronizer::class)->failLocally(
             $generation,
             'submission_timeout',
-            'The image service was too busy to accept this request. You were not charged — please try again.',
+            self::GAVE_UP_MESSAGE,
             confirmed: false,
         );
     }
@@ -118,6 +129,22 @@ class SubmitGeneration implements ShouldQueue
             return;
         }
 
-        $this->release(min(self::MAX_RETRY_SECONDS, $exception->retryAfterSeconds ?? self::DEFAULT_RETRY_SECONDS));
+        if ($exception->errorCode === 'concurrency_limit_exceeded') {
+            $this->release(min(self::MAX_RETRY_SECONDS, $exception->retryAfterSeconds ?? self::DEFAULT_RETRY_SECONDS));
+
+            return;
+        }
+
+        $failures = $generation->submission_failures + 1;
+        $generation->update(['submission_failures' => $failures]);
+
+        if ($failures >= self::MAX_SUBMISSION_FAILURES) {
+            // Unconfirmed: an attempt that timed out may still have been accepted.
+            $synchronizer->failLocally($generation, 'submission_timeout', self::GAVE_UP_MESSAGE, confirmed: false);
+
+            return;
+        }
+
+        $this->release(min(self::MAX_RETRY_SECONDS, max($exception->retryAfterSeconds ?? 0, 2 ** $failures)));
     }
 }

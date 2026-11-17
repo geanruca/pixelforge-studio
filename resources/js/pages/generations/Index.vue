@@ -124,7 +124,7 @@ const formatDate = (iso: string): string =>
                             generation.status === 'processing'
                                 ? 'Generating your image…'
                                 : generation.awaiting_slot
-                                  ? 'Waiting for a free slot…'
+                                  ? 'Waiting to start…'
                                   : 'In the queue…'
                         }}
                     </div>

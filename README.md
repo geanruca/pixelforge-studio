@@ -6,6 +6,7 @@ recorded at exactly what it cost.
 
 Laravel 13 · Vue 3 · Inertia 3 · PostgreSQL · database queue.
 
+- **Live:** https://pixelforge.24.199.64.10.sslip.io (sign up, press "Buy credits", generate)
 - **Requirements and edge cases, each mapped to its test:** [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md)
 - **Required:** generate page with a live price estimate, pricing with a 25% markup, live history,
   signed webhooks that survive duplicates and reordering.
@@ -61,9 +62,10 @@ the generation forward. (3) The ledger has a unique index on `(generation_id, ty
 cannot write a second charge. Each layer is tested separately.
 
 **Submitting happens in a queue.** Pixelforge allows 3 concurrent generations per account and answers
-429/503 routinely. The job honours `Retry-After` (capped), keeps trying for 15 minutes, and does not
-spend a request while it knows all three slots are taken. The user sees the generation as queued
-("waiting for a free slot") the whole time.
+429/503 routinely. Waiting for one of the three slots is normal, so the job just waits its turn (up to
+15 minutes) and does not spend a request while it knows all slots are taken. Overloads, rate limits and
+timeouts are different: the job backs off exponentially, never sooner than `Retry-After`, and stops
+after six attempts with the hold refunded. The user sees the generation as queued the whole time.
 
 **"We gave up" is not the same as "it failed".** A timed-out create may have been accepted. Rejections
 Pixelforge states explicitly (content policy, validation, daily limit) are final; giving up after
@@ -90,6 +92,21 @@ The report compares each day with `GET /v1/usage` to the nanodollar and flags an
 - **Concurrency tests against a real database with parallel connections.** Row locks and unique indexes
   are in place and the suite also passes on PostgreSQL, but races are tested sequentially.
 
+## Checked against the live API
+
+Besides the automated suite, the deployed app was exercised against Pixelforge itself:
+
+| Scenario | Result |
+|---|---|
+| `[succeed]`, plain prompts, Unicode prompt, reference image, all three qualities | charged the exact `usage × rates × 1.25`; image copied to our storage |
+| `[fail]` | failed, hold released, "not charged" |
+| `[blocked]` | rejected at submit, failed immediately with the content-policy message, hold released |
+| `[overloaded]` | backs off, gives up after six attempts, hold released |
+| `[slow]` | stays "processing" for over a minute, then settles |
+| `[duplicate]` | every event delivered twice; second delivery answered `200 duplicate`, charged once |
+| Eight submitted at once | three run, the rest wait for a slot and follow as slots free up |
+| Provider cost vs `GET /v1/usage` | identical to the nanodollar; ledger sum equals the balance |
+
 ## Running it locally
 
 ```bash
@@ -110,7 +127,7 @@ key per environment — each key has its own webhook URL, signing secret and usa
 ## Quality
 
 ```bash
-php artisan test       # PHPUnit: 188 tests
+php artisan test       # PHPUnit: 191 tests
 composer phpstan       # Larastan, level 9, no baseline
 composer pfix          # Laravel Pint
 npm run check          # lint + format

@@ -99,11 +99,12 @@ class SubmitGenerationTest extends TestCase
     {
         return [
             'concurrency limit waits the 5 seconds asked for' => [429, 'concurrency_limit_exceeded', ['Retry-After' => '5'], 5],
+            'concurrency limit without Retry-After waits a default' => [429, 'concurrency_limit_exceeded', [], 5],
             'rate limit waits for the rest of the minute' => [429, 'rate_limit_exceeded', ['Retry-After' => '37'], 37],
             'overload waits the 2 seconds asked for' => [503, 'overloaded', ['Retry-After' => '2'], 2],
-            'no Retry-After falls back to a default wait' => [503, 'overloaded', [], 5],
+            'no Retry-After starts the backoff at 2 seconds' => [503, 'overloaded', [], 2],
             'an absurd Retry-After is capped' => [429, 'rate_limit_exceeded', ['Retry-After' => '86400'], 60],
-            'an unreadable 500 is retried, not treated as final' => [500, 'whatever', [], 5],
+            'an unreadable 500 is retried, not treated as final' => [500, 'whatever', [], 2],
         ];
     }
 
@@ -131,9 +132,48 @@ class SubmitGenerationTest extends TestCase
         $generation = $this->heldGeneration($this->userWithCredits(1), submitted: false);
         Http::fake(fn () => throw new ConnectionException('Operation timed out'));
 
-        $this->runJob($generation)->assertReleased(5);
+        $this->runJob($generation)->assertReleased(2);
 
         $this->assertSame(GenerationStatus::Queued, $generation->refresh()->status);
+    }
+
+    public function test_repeated_overloads_back_off_exponentially_then_give_up_and_refund(): void
+    {
+        $user = $this->userWithCredits(1);
+        $generation = $this->heldGeneration($user, submitted: false);
+        $this->fakeRejection(503, 'overloaded', ['Retry-After' => '2']);
+
+        // Never sooner than Retry-After, then doubling: 2, 4, 8, 16, 32 seconds.
+        foreach ([2, 4, 8, 16, 32] as $delay) {
+            $this->runJob($generation)->assertReleased($delay);
+            $this->assertSame(GenerationStatus::Queued, $generation->refresh()->status);
+        }
+
+        // The sixth refusal is the last: stop hammering a struggling provider.
+        $this->runJob($generation)->assertNotReleased();
+
+        $generation->refresh();
+        $this->assertSame(GenerationStatus::Failed, $generation->status);
+        $this->assertSame('submission_timeout', $generation->error_code);
+        $this->assertFalse($generation->outcome_confirmed);
+        $this->assertStringContainsString('not charged', $generation->failureMessage());
+        $this->assertSame(1_000_000_000, $user->refresh()->balance_nanos);
+        $this->assertLedgerMatchesBalance($user);
+        Http::assertSentCount(SubmitGeneration::MAX_SUBMISSION_FAILURES);
+    }
+
+    public function test_waiting_for_a_concurrency_slot_never_counts_towards_giving_up(): void
+    {
+        $generation = $this->heldGeneration($this->userWithCredits(1), submitted: false);
+        $this->fakeRejection(429, 'concurrency_limit_exceeded', ['Retry-After' => '5']);
+
+        for ($attempt = 0; $attempt < SubmitGeneration::MAX_SUBMISSION_FAILURES * 2; $attempt++) {
+            $this->runJob($generation)->assertReleased(5);
+        }
+
+        $generation->refresh();
+        $this->assertSame(GenerationStatus::Queued, $generation->status);
+        $this->assertSame(0, $generation->submission_failures);
     }
 
     public function test_a_success_response_we_cannot_read_is_retried_not_failed(): void
@@ -141,7 +181,7 @@ class SubmitGenerationTest extends TestCase
         $generation = $this->heldGeneration($this->userWithCredits(1), submitted: false);
         Http::fake(['*/generations' => Http::response('<html>bad gateway page</html>', 200)]);
 
-        $this->runJob($generation)->assertReleased(5);
+        $this->runJob($generation)->assertReleased(2);
 
         $this->assertSame(GenerationStatus::Queued, $generation->refresh()->status);
     }

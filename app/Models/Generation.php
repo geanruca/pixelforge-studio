@@ -39,6 +39,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $image_url Pixelforge's signed URL; expires 24 hours after completion.
  * @property Carbon|null $image_url_expires_at
  * @property string|null $image_path Our own copy of the image, which does not expire.
+ * @property int $submission_failures Attempts Pixelforge refused or never answered (overload, rate limit, timeout).
  * @property Carbon|null $submitted_at
  * @property Carbon|null $started_at
  * @property Carbon|null $completed_at Pixelforge's completion time: the UTC day it bills the generation on.
@@ -51,12 +52,19 @@ use Illuminate\Support\Carbon;
     'user_id', 'idempotency_key', 'provider_id', 'status', 'outcome_confirmed', 'prompt', 'size', 'quality',
     'reference_images', 'estimated_price_nanos', 'reserved_nanos', 'provider_cost_nanos', 'price_nanos', 'usage',
     'error_code', 'error_message', 'image_url', 'image_url_expires_at', 'image_path', 'submitted_at', 'started_at',
-    'completed_at', 'last_synced_at',
+    'completed_at', 'last_synced_at', 'submission_failures',
 ])]
 class Generation extends Model
 {
     /** @use HasFactory<GenerationFactory> */
     use HasFactory;
+
+    /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'submission_failures' => 0,
+    ];
 
     /**
      * @return BelongsTo<User, $this>
@@ -139,6 +147,7 @@ class Generation extends Model
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
             'last_synced_at' => 'datetime',
+            'submission_failures' => 'integer',
         ];
     }
 }

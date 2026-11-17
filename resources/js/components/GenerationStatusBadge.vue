@@ -13,7 +13,7 @@ const presentation = computed(() => {
         case 'queued':
             return {
                 label: props.awaitingSlot
-                    ? 'Waiting for a free slot'
+                    ? 'Waiting to start'
                     : 'Queued',
                 icon: Clock,
                 classes:
