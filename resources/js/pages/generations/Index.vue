@@ -7,6 +7,8 @@ import GenerationStatusBadge from '@/components/GenerationStatusBadge.vue';
 import GenerationTitle from '@/components/GenerationTitle.vue';
 import Heading from '@/components/Heading.vue';
 import LiveGenerationProgress from '@/components/LiveGenerationProgress.vue';
+import PromptText from '@/components/PromptText.vue';
+import SizeShape from '@/components/SizeShape.vue';
 import { Button } from '@/components/ui/button';
 import { exactUsd, formatUsd } from '@/lib/money';
 import { dashboard } from '@/routes';
@@ -233,10 +235,13 @@ const formatDate = (iso: string): string =>
                     </div>
 
                     <p class="line-clamp-3 text-sm" :title="generation.prompt">
-                        {{ generation.prompt }}
+                        <PromptText :prompt="generation.prompt" />
                     </p>
 
-                    <p class="text-xs text-muted-foreground">
+                    <p
+                        class="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground"
+                    >
+                        <SizeShape :size="generation.size" :scale="12" />
                         {{ generation.size.replace('x', ' × ') }} ·
                         {{ generation.quality }} quality
                         <template v-if="generation.reference_images.length">

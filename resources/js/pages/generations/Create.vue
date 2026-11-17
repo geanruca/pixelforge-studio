@@ -7,11 +7,13 @@ import { toast } from 'vue-sonner';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import ReferenceImageFields from '@/components/ReferenceImageFields.vue';
+import SizeShape from '@/components/SizeShape.vue';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { exactUsd, formatUsd } from '@/lib/money';
+import { splitPrompt } from '@/lib/promptKeywords';
 import { dashboard } from '@/routes';
 import { index as credits, store as buyCredits } from '@/routes/credits';
 import { estimate as estimateRoute, store } from '@/routes/generations';
@@ -48,6 +50,23 @@ const form = useForm({
 
 // Counted the way the server and Pixelforge count: Unicode characters, not UTF-16 units.
 const promptCharacters = computed(() => [...form.prompt.trim()].length);
+// Pixelforge's test keywords, pointed out so their effect is no surprise.
+const promptKeywords = computed(() => {
+    const seen = new Set<string>();
+
+    return splitPrompt(form.prompt).filter((part) => {
+        const key = part.text.toLowerCase();
+
+        if (part.keyword === null || seen.has(key)) {
+            return false;
+        }
+
+        seen.add(key);
+
+        return true;
+    });
+});
+
 const promptTooLong = computed(
     () => promptCharacters.value > props.limits.prompt,
 );
@@ -221,6 +240,22 @@ const creditsError = computed(() => serverErrors.value.credits);
                             Boolean(form.errors.prompt) || promptTooLong
                         "
                     />
+                    <p
+                        v-if="promptKeywords.length"
+                        class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+                        data-test="detected-keywords"
+                    >
+                        Test keywords in this prompt:
+                        <span
+                            v-for="part in promptKeywords"
+                            :key="part.text"
+                            class="rounded border px-1 py-px font-mono"
+                            :class="part.keyword?.classes"
+                            :title="part.keyword?.hint"
+                        >
+                            {{ part.text }}
+                        </span>
+                    </p>
                     <InputError
                         :message="
                             form.errors.prompt ??
@@ -237,7 +272,7 @@ const creditsError = computed(() => serverErrors.value.credits);
                         <label
                             v-for="size in sizes"
                             :key="size.value"
-                            class="flex cursor-pointer items-center justify-center rounded-md border px-3 py-2 text-center text-sm transition-colors has-checked:border-primary has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50"
+                            class="flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors has-checked:border-primary has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50"
                         >
                             <input
                                 v-model="form.size"
@@ -246,7 +281,19 @@ const creditsError = computed(() => serverErrors.value.credits);
                                 :value="size.value"
                                 class="sr-only"
                             />
-                            {{ size.label }}
+                            <span
+                                class="flex size-7 shrink-0 items-center justify-center"
+                            >
+                                <SizeShape :size="size.value" />
+                            </span>
+                            <span class="grid text-left leading-tight">
+                                <span class="font-medium">{{
+                                    size.label
+                                }}</span>
+                                <span class="text-xs tabular-nums opacity-70">
+                                    {{ size.value.replace('x', ' × ') }}
+                                </span>
+                            </span>
                         </label>
                     </div>
                     <InputError :message="form.errors.size" />

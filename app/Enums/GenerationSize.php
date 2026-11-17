@@ -13,9 +13,9 @@ enum GenerationSize: string
     public function label(): string
     {
         return match ($this) {
-            self::Square => 'Square (1024 × 1024)',
-            self::Landscape => 'Landscape (1536 × 1024)',
-            self::Portrait => 'Portrait (1024 × 1536)',
+            self::Square => 'Square',
+            self::Landscape => 'Landscape',
+            self::Portrait => 'Portrait',
         };
     }
 }
