@@ -1,8 +1,8 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/vue-starter-kit",
+    "name": "geanruca/pixelforge-studio",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "Image generation with exact per-generation billing on top of the Pixelforge API.",
     "keywords": [
         "laravel",
         "framework"
@@ -53,6 +53,8 @@
             "Composer\\Config::disableProcessTimeout",
             "@php artisan dev"
         ],
+        "pfix": "vendor/bin/pint --dirty",
+        "phpstan": "./vendor/bin/phpstan analyse --memory-limit=2G",
         "lint": [
             "pint --parallel"
         ],
@@ -97,8 +99,7 @@
         "laravel": {
             "dont-discover": [],
             "installer": {
-                "post-create-project": [
-                ]
+                "post-create-project": []
             }
         }
     },
