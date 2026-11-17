@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { register } from '@/routes';
+import { engineering, register } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 import PasskeyVerify from '@/components/PasskeyVerify.vue';
@@ -105,6 +105,13 @@ defineProps<{
         <div class="text-center text-sm text-muted-foreground">
             Don't have an account?
             <TextLink :href="register()" :tabindex="5">Sign up</TextLink>
+        </div>
+
+        <div class="text-center text-sm text-muted-foreground">
+            Evaluating this project?
+            <TextLink :href="engineering()" :tabindex="6">
+                Read the engineering notes
+            </TextLink>
         </div>
     </Form>
 </template>

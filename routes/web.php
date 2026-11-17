@@ -2,10 +2,14 @@
 
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\CreditController;
+use App\Http\Controllers\EngineeringController;
 use App\Http\Controllers\GenerationController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
+
+// Public on purpose: how this application was built, for anyone evaluating it.
+Route::get('engineering', EngineeringController::class)->name('engineering');
 
 Route::middleware('auth')->group(function () {
     Route::get('dashboard', [GenerationController::class, 'create'])->name('dashboard');

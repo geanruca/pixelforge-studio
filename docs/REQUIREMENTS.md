@@ -1,5 +1,10 @@
 # Requirements checklist
 
+Two lists. **Part 1** is what the brief and the API reference ask for. **Part 2** is what I hold any
+system that moves money to, whether or not anyone asks.
+
+# Part 1 — What was asked
+
 Every requirement of the [assessment brief](https://pixelforge.promptedit.dev/assessment) and of the
 [API reference](https://pixelforge.promptedit.dev/docs), with the edge cases considered and the test that
 proves each one. Test paths are relative to `tests/`.
@@ -144,3 +149,106 @@ Legend: ✅ implemented and covered by an automated test · 🔎 verified by han
 | 8.2 | Deployed to a public host, with a few generations left on it                                                                    | see README     |
 | 8.3 | One API key per environment (local and production keys are different)                                                           | `.env.example` |
 | 8.4 | 🔎 Live checks with `[fail]`, `[slow]`, `[duplicate]`, `[blocked]`, `[overloaded]`, more than 3 at once, and a dashboard resend | see README     |
+
+# Part 2 — What I add on my own
+
+Standards I check on any system that moves money or calls a third party, with the evidence here.
+Tests are relative to `tests/Feature/`.
+
+## A. Idempotency (always, for payments and fulfilment)
+
+| #   | Standard                                                                                  | Where                                                    | Test                                                                                                                                                                               |
+| --- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A.1 | ✅ Our call to the provider is idempotent: a retried timeout cannot create a second image | `PixelforgeClient::createGeneration` (`Idempotency-Key`) | `Generations/SubmitGenerationTest::test_it_submits_the_generation_and_records_the_provider_id`, `…::test_an_idempotent_replay_that_already_succeeded_is_settled_from_the_response` |
+| A.2 | ✅ API clients can retry a create safely: same key returns the same generation, one hold  | `GenerationCreator::createOnce`                          | `Api/GenerationApiTest::test_repeating_a_request_with_the_same_idempotency_key_creates_and_holds_once`                                                                             |
+| A.3 | ✅ A key reused with a different body is a conflict, not a silent replay                  | same                                                     | `…::test_an_idempotency_key_reused_with_other_parameters_is_a_conflict`                                                                                                            |
+| A.4 | ✅ Keys are scoped to the account                                                         | unique `(user_id, client_idempotency_key)`               | `…::test_idempotency_keys_are_scoped_to_the_account`                                                                                                                               |
+| A.5 | ✅ AI agents get the same protection                                                      | `GenerateImageTool`                                      | `Mcp/PixelforgeStudioServerTest::test_an_agent_retrying_generate_image_with_the_same_key_does_not_pay_twice`                                                                       |
+| A.6 | ✅ Buying credits twice by double click credits once                                      | purchase `reference`                                     | `Credits/CreditPagesTest::test_a_double_submitted_purchase_is_credited_once`                                                                                                       |
+| A.7 | ✅ Webhook events are applied once                                                        | `webhook_events.event_id` unique                         | `Webhooks/PixelforgeWebhookTest::test_a_duplicate_event_is_acknowledged_but_recorded_once`                                                                                         |
+| A.8 | ✅ Settling, releasing and failing are idempotent by construction                         | `CreditLedger`, `GenerationSynchronizer`                 | `Credits/CreditLedgerTest::test_settling_twice_charges_once`, `Generations/GenerationSynchronizerTest::test_failing_locally_twice_releases_the_hold_once`                          |
+| A.9 | ✅ A queue job that runs twice does not submit twice                                      | `SubmitGeneration`                                       | `Generations/SubmitGenerationTest::test_a_job_that_runs_again_after_success_does_not_submit_twice`                                                                                 |
+
+## B. External services: dependency injection, circuit breaker, fallback
+
+| #    | Standard                                                                                                  | Where                                                     | Test                                                                                                                                                                                                                  |
+| ---- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B.1  | ✅ Callers depend on a contract; the container chooses the implementation                                 | `Contracts\ImageProvider`, `AppServiceProvider::register` | `Resilience/ResilientImageProviderTest::test_the_application_resolves_the_contract_to_pixelforge_behind_the_breaker`                                                                                                  |
+| B.2  | ✅ The circuit opens after consecutive failures and then makes no calls                                   | `CircuitBreaker`                                          | `…::test_the_circuit_opens_after_consecutive_failures_and_then_makes_no_calls`                                                                                                                                        |
+| B.3  | ✅ Timeouts and unreadable answers count as failures                                                      | `PixelforgeException::indicatesUnhealthyProvider`         | `…::test_timeouts_and_unreadable_answers_also_count_as_failures`                                                                                                                                                      |
+| B.4  | ✅ A healthy provider refusing a request never opens the circuit                                          | same                                                      | `…::test_a_healthy_provider_refusing_requests_never_opens_the_circuit`                                                                                                                                                |
+| B.5  | ✅ Failures must be consecutive; a success resets the count                                               | `CircuitBreaker`                                          | `…::test_failures_must_be_consecutive`                                                                                                                                                                                |
+| B.6  | ✅ Half-open: a successful probe closes it, a failed probe reopens it at once                             | same                                                      | `…::test_after_the_cooldown_a_successful_probe_closes_the_circuit`, `…::test_a_failed_probe_reopens_the_circuit_at_once`                                                                                              |
+| B.7  | ✅ A fallback provider takes over creating generations; reads are never rerouted                          | `ResilientImageProvider`                                  | `…::test_a_fallback_provider_takes_over_creating_generations_when_the_primary_is_unwell`                                                                                                                              |
+| B.8  | ✅ A request rejected on its merits is not sent to the fallback                                           | same                                                      | `…::test_a_request_the_primary_rejects_on_its_merits_is_not_sent_to_the_fallback`                                                                                                                                     |
+| B.9  | ✅ While the circuit is open, submissions wait without calling or counting a failure                      | `SubmitGeneration`                                        | `Generations/SubmitGenerationTest::test_while_the_circuit_is_open_the_job_waits_without_calling_or_counting_a_failure`                                                                                                |
+| B.10 | ✅ Every caller degrades on its own: estimates use recent pricing, the report shows our numbers unchecked | `PricingRepository`, `SpendReport`                        | `Generations/GenerationPagesTest::test_the_estimate_survives_a_pixelforge_outage_using_the_last_known_pricing`, `Admin/ReportTest::test_the_operations_panel_says_when_the_provider_is_paused_by_the_circuit_breaker` |
+| B.11 | ✅ Stale fallback data has an age limit                                                                   | `PricingRepository`                                       | `Generations/GenerationPagesTest::test_pricing_that_is_too_old_is_not_trusted_to_size_a_hold`                                                                                                                         |
+
+## C. Fairness between users and worker throughput
+
+| #   | Standard                                                                     | Where                                                    | Test (all in `Generations/SlotAllocatorTest`)                                                |
+| --- | ---------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| C.1 | ✅ One user cannot take all the shared capacity: round-robin by user         | `SlotAllocator::line`                                    | `test_one_user_with_many_requests_does_not_make_everyone_else_wait_behind_all_of_them`       |
+| C.2 | ✅ Work a user already has running counts as turns taken                     | same                                                     | `test_images_a_user_already_has_running_count_as_turns_taken`                                |
+| C.3 | ✅ Within a turn, first come first served                                    | same                                                     | `test_within_the_same_turn_whoever_asked_first_goes_first`                                   |
+| C.4 | ✅ Several workers cannot take the same slot (check and take under one lock) | `SlotAllocator::claim`                                   | `test_only_as_many_generations_as_there_are_free_slots_may_start`                            |
+| C.5 | ✅ A free slot does not let anyone jump the line                             | same                                                     | `test_a_generation_cannot_jump_the_line_even_when_a_slot_is_free`                            |
+| C.6 | ✅ A slot held by a crashed worker is freed                                  | claim expiry                                             | `test_a_slot_claimed_by_a_worker_that_crashed_is_freed_after_a_while`                        |
+| C.7 | ✅ A refused submission gives its slot back                                  | `SubmitGeneration`                                       | `test_the_submission_job_waits_when_it_is_not_its_turn_and_gives_the_slot_back_when_refused` |
+| C.8 | ✅ Short, user-facing jobs and slow background jobs run on separate queues   | `SubmitGeneration::QUEUE`, `StoreGenerationImage::QUEUE` | `test_submissions_and_image_copies_run_on_separate_queues`                                   |
+| C.9 | ✅ The position shown to the user is the fair one                            | `GenerationController::index`                            | `test_the_history_page_shows_the_fair_position_not_the_arrival_order`                        |
+
+## D. Rate limiting
+
+| #   | Standard                                                                                                                             | Where                     | Test                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- | -------------------------------------------------------------------------------------------------------- |
+| D.1 | ✅ Our API and MCP server are limited per account, answer 429 with `Retry-After`, and one account cannot exhaust another's allowance | `RateLimiter::for('api')` | `Api/GenerationApiTest::test_requests_are_rate_limited_per_account`                                      |
+| D.2 | ✅ We do not spend the provider's allowance needlessly: pricing is cached                                                            | `PricingRepository`       | `Generations/GenerationPagesTest::test_estimating_does_not_spend_a_pixelforge_request_each_time`         |
+| D.3 | ✅ The provider's 429 is honoured, including its `Retry-After`                                                                       | `SubmitGeneration`        | `Generations/SubmitGenerationTest::test_temporary_rejections_wait_and_retry_without_failing_or_charging` |
+| D.4 | ✅ Polling stops at the provider's rate limit                                                                                        | `ReconcileGenerations`    | `Console/ReconcileGenerationsTest::test_it_stops_polling_as_soon_as_the_rate_limit_is_hit`               |
+| D.5 | 🔎 Verified on the deployed app with real requests                                                                                   |                           | see README                                                                                               |
+
+## E. Waiting screens that inform and ask
+
+| #   | Standard                                                                            | Where                             | Test (all in `Generations/LiveGenerationTest`)                                                                     |
+| --- | ----------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| E.1 | ✅ After submitting, the user lands on the generation they just made                | `GenerationController::store`     | `test_submitting_lands_on_history_with_the_new_generation_pointed_out`                                             |
+| E.2 | ✅ The wait shows the place in line                                                 | `LiveGenerationProgress.vue`      | `test_a_waiting_generation_knows_its_place_in_the_line_shared_by_all_users`                                        |
+| E.3 | ✅ Automatic retries are shown, with the attempt number                             | same                              | `test_a_generation_being_retried_reports_which_attempt_it_is_on`                                                   |
+| E.4 | ✅ Each step carries when it happened, so elapsed times are real                    | `GenerationResource`              | `test_the_timeline_carries_when_each_step_happened`                                                                |
+| E.5 | ✅ Optional data is asked for during the wait, saved optimistically, editable later | `GenerationTitle.vue`             | `test_the_user_can_name_an_image_while_it_generates_and_rename_or_clear_it_later`                                  |
+| E.6 | ✅ That input is validated, owner-only, and cannot touch status or money            | `UpdateGenerationRequest`, policy | `test_a_name_is_validated_and_only_the_owner_can_set_it`, `test_naming_an_image_never_touches_its_status_or_money` |
+| E.7 | ✅ Missing credits are solved in place, without losing the prompt                   | `Create.vue` (top-up)             | 🔎 verified in the browser                                                                                         |
+| E.8 | 🔎 Verified on the deployed app: the screen updates as the generation progresses    |                                   | see README                                                                                                         |
+
+## F. API, documentation and agents
+
+| #   | Standard                                                                           | Where                                  | Test                                                                                              |
+| --- | ---------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| F.1 | ✅ A public API has a written contract, and code cannot drift from it              | `docs-site/api-reference/openapi.yaml` | `Api/OpenApiContractTest` (7 tests: routes, fields, money pattern, enums, tool names, navigation) |
+| F.2 | ✅ One error shape with stable codes                                               | `ApiExceptionRenderer`                 | `Api/GenerationApiTest`                                                                           |
+| F.3 | ✅ Money leaves the API as exact decimal strings                                   | `Api\V1\GenerationResource`            | `Api/OpenApiContractTest::test_money_in_responses_matches_the_documented_pattern`                 |
+| F.4 | ✅ Another account's resource is a 404, never a 403 that confirms it exists        | `GenerationController::show`           | `Api/GenerationApiTest::test_another_accounts_generation_is_a_404_not_a_403`                      |
+| F.5 | ✅ Tokens: password confirmation to mint, hash only, shown once, expire, revocable | `ApiTokenController`                   | `Settings/ApiTokenTest`                                                                           |
+| F.6 | ✅ An MCP server over the same services, with the same rules and limits            | `app/Mcp/`                             | `Mcp/PixelforgeStudioServerTest`                                                                  |
+| F.7 | ✅ Signed image links expire and cannot be altered                                 | `generations.image.signed`             | `Api/GenerationApiTest::test_an_image_link_that_was_tampered_with_or_expired_is_refused`          |
+
+## G. Decisions made visible
+
+| #   | Standard                                                                                              | Where                                          | Test                                                                     |
+| --- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| G.1 | ✅ Every decision is documented with its problem, where it lives and what proves it, on a public page | `/engineering`, `App\Support\EngineeringNotes` | `EngineeringNotesTest::test_the_page_is_public`                          |
+| G.2 | ✅ That documentation cannot go stale: every file and test it names must exist                        | same                                           | `EngineeringNotesTest::test_every_file_and_test_a_note_points_at_exists` |
+| G.3 | ✅ Everything is in English: interface, code, documentation, commit messages                          | repository                                     | by inspection                                                            |
+| G.4 | ✅ The fit with the role is written down, including what is not shown                                 | `docs/ROLE_FIT.md`                             | by inspection                                                            |
+
+## H. Safe to merge without review
+
+| #   | Standard                                                                                                        | Where                                                                                                               |
+| --- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| H.1 | ✅ Static analysis at PHPStan level 9, no baseline; Pint; frontend lint and types                               | `phpstan.neon`, CI                                                                                                  |
+| H.2 | ✅ The suite passes on SQLite and on PostgreSQL                                                                 | `.github/workflows/ci.yml`                                                                                          |
+| H.3 | ✅ An independent review of the money paths, with every confirmed finding fixed and tested                      | commit `8d657e5`                                                                                                    |
+| H.4 | ✅ Operators can see what is happening: provider health, slots, the line, stuck generations, failures by reason | `OperationsSnapshot`, `Admin/ReportTest::test_the_operations_panel_shows_health_slots_the_line_and_recent_failures` |
+| H.5 | ✅ No hold can be left forever: lost jobs are swept, accepted generations keep being polled                     | `ReconcileGenerations`, `Console/ReconcileGenerationsTest`                                                          |
