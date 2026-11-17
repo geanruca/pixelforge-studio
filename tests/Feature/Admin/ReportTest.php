@@ -27,8 +27,9 @@ class ReportTest extends TestCase
         Http::preventStrayRequests();
         $this->travelTo(CarbonImmutable::parse('2026-11-16 12:00:00', 'UTC'));
 
-        config(['pixelforge.admin_emails' => ['ops@example.com']]);
-        $this->admin = User::factory()->create(['email' => 'Ops@Example.com']);
+        $this->admin = User::factory()->create(['email' => 'ops@example.com']);
+        $this->artisan('operator:grant', ['email' => 'ops@example.com'])->assertSuccessful();
+        $this->admin->refresh();
     }
 
     /**
@@ -58,6 +59,26 @@ class ReportTest extends TestCase
     {
         $this->get(route('admin.report'))->assertRedirect(route('login'));
         $this->actingAs(User::factory()->create())->get(route('admin.report'))->assertForbidden();
+    }
+
+    public function test_operator_access_is_granted_from_the_server_never_by_signing_up(): void
+    {
+        // Sign-up is open and emails are unverified: registering must never be enough.
+        $this->post(route('register.store'), [
+            'name' => 'Mallory',
+            'email' => 'admin@example.com',
+            'password' => 'password-123-ABC',
+            'password_confirmation' => 'password-123-ABC',
+            'is_admin' => true,
+        ]);
+
+        $mallory = User::query()->where('email', 'admin@example.com')->sole();
+        $this->assertFalse($mallory->isAdmin());
+        $this->actingAs($mallory)->get(route('admin.report'))->assertForbidden();
+
+        $this->artisan('operator:grant', ['email' => 'nobody@example.com'])->assertFailed();
+        $this->artisan('operator:grant', ['email' => 'ops@example.com', '--revoke' => true])->assertSuccessful();
+        $this->actingAs($this->admin->refresh())->get(route('admin.report'))->assertForbidden();
     }
 
     public function test_it_reports_spend_cost_and_profit_per_day_and_user_and_matches_pixelforge(): void
