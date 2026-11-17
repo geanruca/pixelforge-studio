@@ -284,7 +284,7 @@ class SubmitGenerationTest extends TestCase
         $generation = $this->heldGeneration($user, submitted: false);
         Http::fake();
 
-        $this->runJob($generation)->assertReleased(5);
+        $this->runJob($generation)->assertReleased(3);
 
         Http::assertNothingSent();
         $this->assertNull($generation->refresh()->provider_id);

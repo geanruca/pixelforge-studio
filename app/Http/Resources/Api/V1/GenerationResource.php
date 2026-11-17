@@ -42,6 +42,7 @@ class GenerationResource extends JsonResource
             'id' => $this->id,
             'object' => 'generation',
             'status' => $this->status->value,
+            'title' => $this->title,
             'prompt' => $this->prompt,
             'size' => $this->size->value,
             'quality' => $this->quality->value,

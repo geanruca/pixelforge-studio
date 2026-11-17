@@ -24,7 +24,13 @@ class StoreGenerationImage implements ShouldQueue
 
     public int $timeout = 60;
 
-    public function __construct(public readonly int $generationId) {}
+    /** Downloads can be slow; on their own queue they never delay a submission. */
+    public const string QUEUE = 'images';
+
+    public function __construct(public readonly int $generationId)
+    {
+        $this->onQueue(self::QUEUE);
+    }
 
     /**
      * @return list<int>

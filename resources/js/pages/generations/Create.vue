@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { useDebounceFn } from '@vueuse/core';
 import { CircleAlert, Sparkles } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
+import { toast } from 'vue-sonner';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import ReferenceImageFields from '@/components/ReferenceImageFields.vue';
@@ -12,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { exactUsd, formatUsd } from '@/lib/money';
 import { dashboard } from '@/routes';
-import { index as credits } from '@/routes/credits';
+import { index as credits, store as buyCredits } from '@/routes/credits';
 import { estimate as estimateRoute, store } from '@/routes/generations';
 import type { Option, PriceEstimate } from '@/types';
 
@@ -20,6 +21,7 @@ const props = defineProps<{
     sizes: Option[];
     qualities: Option[];
     limits: { prompt: number; reference_images: number };
+    creditPacks: number[];
     prefill: {
         prompt: string;
         size: string;
@@ -139,6 +141,28 @@ const canSubmit = computed(
         !cannotAfford.value &&
         !form.processing,
 );
+
+// Out of credits is not a dead end: top up in place, without losing the prompt.
+const toppingUp = ref<number | null>(null);
+
+const topUp = (pack: number): void => {
+    if (toppingUp.value !== null) {
+        return;
+    }
+
+    toppingUp.value = pack;
+
+    router.post(
+        buyCredits.url(),
+        { pack, reference: crypto.randomUUID() },
+        {
+            preserveState: true,
+            preserveScroll: true,
+            onSuccess: () => toast.success(`$${pack} of credits added`),
+            onFinish: () => (toppingUp.value = null),
+        },
+    );
+};
 
 const submit = (): void => {
     form.transform((data) => ({
@@ -333,25 +357,46 @@ const creditsError = computed(() => serverErrors.value.credits);
                     </span>
                 </div>
 
-                <Alert
-                    v-if="cannotAfford || creditsError"
-                    variant="destructive"
+                <div
+                    v-if="cannotAfford && price"
+                    class="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950"
+                    role="status"
+                    data-test="top-up"
                 >
+                    <p class="font-medium">
+                        {{ formatUsd(price.maximum - balance, 'up') }} short
+                    </p>
+                    <p class="text-muted-foreground">
+                        We reserve the highest possible price,
+                        {{ formatUsd(price.maximum, 'up') }}, and you have
+                        {{ formatUsd(balance, 'down') }}. Add credits here and
+                        keep your prompt:
+                    </p>
+                    <div class="flex flex-wrap gap-2">
+                        <Button
+                            v-for="pack in creditPacks"
+                            :key="pack"
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            :disabled="toppingUp !== null"
+                            :data-test="`top-up-${pack}`"
+                            @click="topUp(pack)"
+                        >
+                            <Spinner v-if="toppingUp === pack" />
+                            Add ${{ pack }}
+                        </Button>
+                    </div>
+                    <p class="text-xs text-muted-foreground">
+                        Demo checkout: no payment is taken.
+                    </p>
+                </div>
+
+                <Alert v-else-if="creditsError" variant="destructive">
                     <CircleAlert aria-hidden="true" />
-                    <AlertTitle>
-                        {{
-                            cannotAfford
-                                ? 'Not enough credits'
-                                : 'Not submitted'
-                        }}
-                    </AlertTitle>
+                    <AlertTitle>Not submitted</AlertTitle>
                     <AlertDescription>
-                        <p v-if="creditsError">{{ creditsError }}</p>
-                        <p v-else-if="price">
-                            This could cost up to
-                            {{ formatUsd(price.maximum, 'up') }} and you have
-                            {{ formatUsd(balance, 'down') }} available.
-                        </p>
+                        <p>{{ creditsError }}</p>
                         <Link
                             :href="credits()"
                             class="font-medium underline underline-offset-4"

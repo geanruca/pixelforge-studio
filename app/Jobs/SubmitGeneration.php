@@ -8,6 +8,7 @@ use App\Contracts\ImageProvider;
 use App\Exceptions\PixelforgeException;
 use App\Models\Generation;
 use App\Services\Generations\GenerationSynchronizer;
+use App\Services\Generations\SlotAllocator;
 use DateTimeInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -21,8 +22,9 @@ use Throwable;
  * regularly says "not now", and the two kinds of "not now" are handled
  * differently:
  *
- *  - All 3 concurrency slots are taken. Nothing is wrong: the generation
- *    simply waits its turn, for as long as the submission window allows.
+ *  - All 3 concurrency slots are taken, or other users go first. Nothing is
+ *    wrong: the generation waits its turn in a line that is round-robin by
+ *    user ({@see SlotAllocator}), for as long as the submission window allows.
  *  - Pixelforge is overloaded, rate limiting us or not answering. The job
  *    backs off exponentially (never sooner than `Retry-After`) and stops after
  *    a few attempts, so a struggling provider is not hammered.
@@ -34,8 +36,14 @@ class SubmitGeneration implements ShouldQueue
 {
     use Queueable;
 
+    /** Submissions are short and what the user is waiting on: they get their own queue, ahead of image copies. */
+    public const string QUEUE = 'submissions';
+
     /** Seconds to wait when Pixelforge gives no `Retry-After`. */
     private const int DEFAULT_RETRY_SECONDS = 5;
+
+    /** Seconds before a generation asks again whether it is its turn for a slot. */
+    private const int SLOT_WAIT_SECONDS = 3;
 
     /** Longest single wait, so one bad header cannot park a generation. */
     private const int MAX_RETRY_SECONDS = 60;
@@ -64,14 +72,17 @@ class SubmitGeneration implements ShouldQueue
         return [2, 10, 30];
     }
 
-    public function __construct(public readonly int $generationId) {}
+    public function __construct(public readonly int $generationId)
+    {
+        $this->onQueue(self::QUEUE);
+    }
 
     public function retryUntil(): DateTimeInterface
     {
         return now()->addMinutes(config()->integer('pixelforge.submission_window_minutes'));
     }
 
-    public function handle(ImageProvider $client, GenerationSynchronizer $synchronizer): void
+    public function handle(ImageProvider $client, GenerationSynchronizer $synchronizer, SlotAllocator $slots): void
     {
         $generation = Generation::query()->find($this->generationId);
 
@@ -79,9 +90,10 @@ class SubmitGeneration implements ShouldQueue
             return;
         }
 
-        // Do not spend a rate-limited request we know will be refused.
-        if (Generation::query()->inFlight()->count() >= config()->integer('pixelforge.max_concurrent_generations')) {
-            $this->release(self::DEFAULT_RETRY_SECONDS);
+        // Not its turn, or every slot is busy: do not spend a rate-limited
+        // request that we know would be refused.
+        if (! $slots->claim($generation)) {
+            $this->release(self::SLOT_WAIT_SECONDS);
 
             return;
         }
@@ -89,6 +101,7 @@ class SubmitGeneration implements ShouldQueue
         try {
             $snapshot = $client->createGeneration($generation);
         } catch (PixelforgeException $exception) {
+            $slots->release($generation);
             $this->handleRejection($generation, $exception, $synchronizer);
 
             return;

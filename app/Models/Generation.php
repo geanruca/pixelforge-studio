@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $provider_id Pixelforge's `gen_…` id, null until the submission is accepted.
  * @property GenerationStatus $status
  * @property bool $outcome_confirmed True once Pixelforge itself confirmed the final state; such a state never changes.
+ * @property string|null $title A name the user may give the image, asked for while it generates.
  * @property string $prompt
  * @property GenerationSize $size
  * @property GenerationQuality $quality
@@ -41,6 +42,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $image_url_expires_at
  * @property string|null $image_path Our own copy of the image, which does not expire.
  * @property int $submission_failures Attempts Pixelforge refused or never answered (overload, rate limit, timeout).
+ * @property Carbon|null $slot_claimed_at When a worker took a provider slot for it, before Pixelforge accepted it.
  * @property Carbon|null $submitted_at
  * @property Carbon|null $started_at
  * @property Carbon|null $completed_at Pixelforge's completion time: the UTC day it bills the generation on.
@@ -53,7 +55,7 @@ use Illuminate\Support\Carbon;
     'user_id', 'idempotency_key', 'provider_id', 'status', 'outcome_confirmed', 'prompt', 'size', 'quality',
     'reference_images', 'estimated_price_nanos', 'reserved_nanos', 'provider_cost_nanos', 'price_nanos', 'usage',
     'error_code', 'error_message', 'image_url', 'image_url_expires_at', 'image_path', 'submitted_at', 'started_at',
-    'completed_at', 'last_synced_at', 'submission_failures', 'client_idempotency_key',
+    'completed_at', 'last_synced_at', 'submission_failures', 'client_idempotency_key', 'title', 'slot_claimed_at',
 ])]
 class Generation extends Model
 {
@@ -120,6 +122,17 @@ class Generation extends Model
             ->where('created_at', '<', now()->subMinutes(config()->integer('pixelforge.submission_window_minutes') + 5));
     }
 
+    /**
+     * Generations waiting for Pixelforge to accept them, oldest first: the
+     * line a new generation joins.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeAwaitingSubmission(Builder $query): void
+    {
+        $query->whereNull('provider_id')->where('status', GenerationStatus::Queued);
+    }
+
     public function isFinal(): bool
     {
         return $this->status->isFinal();
@@ -170,6 +183,7 @@ class Generation extends Model
             'provider_cost_nanos' => 'integer',
             'price_nanos' => 'integer',
             'image_url_expires_at' => 'datetime',
+            'slot_claimed_at' => 'datetime',
             'submitted_at' => 'datetime',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',

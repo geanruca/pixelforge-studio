@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { Head, Link, usePoll } from '@inertiajs/vue3';
 import { ImageOff, RotateCcw, Sparkles } from '@lucide/vue';
-import { reactive, watch } from 'vue';
+import { nextTick, onMounted, reactive, watch } from 'vue';
+import { toast } from 'vue-sonner';
 import GenerationStatusBadge from '@/components/GenerationStatusBadge.vue';
+import GenerationTitle from '@/components/GenerationTitle.vue';
 import Heading from '@/components/Heading.vue';
+import LiveGenerationProgress from '@/components/LiveGenerationProgress.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { exactUsd, formatUsd } from '@/lib/money';
 import { dashboard } from '@/routes';
 import { index as history } from '@/routes/generations';
-import type { Generation, Paginated } from '@/types';
+import type { Generation, GenerationStatus, Paginated } from '@/types';
 
 const props = defineProps<{
     generations: Paginated<Generation>;
+    queuePositions: Record<number, number>;
     hasActive: boolean;
+    justCreated: number | null;
 }>();
 
 defineOptions({
@@ -22,10 +26,13 @@ defineOptions({
     },
 });
 
+const isActive = (status: GenerationStatus): boolean =>
+    status === 'queued' || status === 'processing';
+
 // Poll only while something is in flight; nothing changes once all are final.
 const { start, stop } = usePoll(
-    2500,
-    { only: ['generations', 'hasActive', 'auth'] },
+    2000,
+    { only: ['generations', 'queuePositions', 'hasActive', 'auth'] },
     { autoStart: false },
 );
 
@@ -34,6 +41,57 @@ watch(
     (active) => (active ? start() : stop()),
     { immediate: true },
 );
+
+// Say what happened to the money the moment a generation finishes.
+const lastStatus = new Map<number, GenerationStatus>(
+    props.generations.data.map((generation) => [
+        generation.id,
+        generation.status,
+    ]),
+);
+
+watch(
+    () => props.generations.data,
+    (generations) => {
+        for (const generation of generations) {
+            const before = lastStatus.get(generation.id);
+            lastStatus.set(generation.id, generation.status);
+
+            if (before === undefined || !isActive(before)) {
+                continue;
+            }
+
+            const name = generation.title ?? 'Your image';
+
+            if (
+                generation.status === 'succeeded' &&
+                generation.price_nanos !== null
+            ) {
+                toast.success(`${name} is ready`, {
+                    description: `Charged ${formatUsd(generation.price_nanos)}. ${formatUsd(
+                        generation.reserved_nanos - generation.price_nanos,
+                        'down',
+                    )} of the reservation went back to your balance.`,
+                });
+            } else if (generation.status === 'failed') {
+                toast.error(`${name} could not be generated`, {
+                    description:
+                        generation.error ??
+                        'You were not charged for this generation.',
+                });
+            }
+        }
+    },
+);
+
+onMounted(async () => {
+    if (props.justCreated !== null) {
+        await nextTick();
+        document
+            .querySelector(`[data-test="generation-${props.justCreated}"]`)
+            ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+});
 
 // Images whose URL stopped loading (e.g. an expired provider link).
 const brokenImages = reactive(new Set<number>());
@@ -83,65 +141,84 @@ const formatDate = (iso: string): string =>
             </p>
         </div>
 
-        <ul v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul v-else class="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <li
                 v-for="generation in generations.data"
                 :key="generation.id"
-                class="flex flex-col overflow-hidden rounded-xl border"
+                class="flex flex-col overflow-hidden rounded-xl border transition-shadow"
+                :class="{
+                    'ring-2 ring-sky-500/60':
+                        generation.id === justCreated &&
+                        isActive(generation.status),
+                }"
                 :data-test="`generation-${generation.id}`"
             >
-                <div
-                    class="relative flex w-full items-center justify-center bg-muted"
-                    :class="aspectClass(generation.size)"
-                >
-                    <a
-                        v-if="
-                            generation.image_url &&
-                            !brokenImages.has(generation.id)
-                        "
-                        :href="generation.image_url"
-                        target="_blank"
-                        rel="noopener"
-                        class="size-full"
-                    >
-                        <img
-                            :src="generation.image_url"
-                            :alt="generation.prompt"
-                            loading="lazy"
-                            class="size-full object-cover"
-                            @error="brokenImages.add(generation.id)"
-                        />
-                    </a>
-                    <div
-                        v-else-if="
-                            generation.status === 'queued' ||
-                            generation.status === 'processing'
-                        "
-                        class="flex flex-col items-center gap-2 text-sm text-muted-foreground"
-                    >
-                        <Spinner class="size-6" />
-                        {{
-                            generation.status === 'processing'
-                                ? 'Generating your image…'
-                                : generation.awaiting_slot
-                                  ? 'Waiting to start…'
-                                  : 'In the queue…'
-                        }}
-                    </div>
+                <Transition name="reveal" mode="out-in">
+                    <LiveGenerationProgress
+                        v-if="isActive(generation.status)"
+                        key="live"
+                        :generation="generation"
+                        :queue-position="queuePositions[generation.id] ?? null"
+                    />
+
                     <div
                         v-else
-                        class="flex flex-col items-center gap-2 px-4 text-center text-sm text-muted-foreground"
+                        key="final"
+                        class="relative flex w-full items-center justify-center bg-muted"
+                        :class="aspectClass(generation.size)"
                     >
-                        <ImageOff class="size-6" aria-hidden="true" />
-                        {{
-                            generation.status === 'failed'
-                                ? 'No image was produced'
-                                : 'This image is no longer available'
-                        }}
+                        <a
+                            v-if="
+                                generation.image_url &&
+                                !brokenImages.has(generation.id)
+                            "
+                            :href="generation.image_url"
+                            target="_blank"
+                            rel="noopener"
+                            class="size-full"
+                        >
+                            <img
+                                :src="generation.image_url"
+                                :alt="generation.title ?? generation.prompt"
+                                loading="lazy"
+                                class="size-full object-cover"
+                                @error="brokenImages.add(generation.id)"
+                            />
+                        </a>
+                        <div
+                            v-else
+                            class="flex flex-col items-center gap-2 px-4 text-center text-sm text-muted-foreground"
+                        >
+                            <ImageOff class="size-6" aria-hidden="true" />
+                            {{
+                                generation.status === 'failed'
+                                    ? 'No image was produced'
+                                    : 'This image is no longer available'
+                            }}
+                        </div>
                     </div>
-                </div>
+                </Transition>
 
                 <div class="flex flex-1 flex-col gap-3 p-4">
+                    <div
+                        v-if="isActive(generation.status)"
+                        class="rounded-lg border border-dashed p-3"
+                    >
+                        <p class="mb-2 text-xs text-muted-foreground">
+                            While you wait, what should we call it?
+                        </p>
+                        <GenerationTitle
+                            :generation-id="generation.id"
+                            :title="generation.title"
+                            prompting
+                        />
+                    </div>
+                    <GenerationTitle
+                        v-else
+                        :generation-id="generation.id"
+                        :title="generation.title"
+                    />
+
                     <div class="flex items-center justify-between gap-2">
                         <GenerationStatusBadge
                             :status="generation.status"
@@ -202,11 +279,9 @@ const formatDate = (iso: string): string =>
                         <div>
                             <dt class="text-xs text-muted-foreground">
                                 {{
-                                    generation.status === 'succeeded'
-                                        ? 'Charged'
-                                        : generation.status === 'failed'
-                                          ? 'Charged'
-                                          : 'Reserved'
+                                    isActive(generation.status)
+                                        ? 'Reserved'
+                                        : 'Charged'
                                 }}
                             </dt>
                             <dd
@@ -293,3 +368,23 @@ const formatDate = (iso: string): string =>
         </nav>
     </div>
 </template>
+
+<style scoped>
+/* The finished image fades in where the progress was. */
+.reveal-enter-active,
+.reveal-leave-active {
+    transition: opacity 0.35s ease;
+}
+
+.reveal-enter-from,
+.reveal-leave-to {
+    opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reveal-enter-active,
+    .reveal-leave-active {
+        transition: none;
+    }
+}
+</style>

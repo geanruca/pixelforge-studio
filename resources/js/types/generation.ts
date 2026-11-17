@@ -4,6 +4,13 @@ export type Generation = {
     id: number;
     status: GenerationStatus;
     awaiting_slot: boolean;
+    progress: {
+        retry_attempt: number;
+        max_attempts: number;
+        accepted_at: string | null;
+        started_at: string | null;
+    };
+    title: string | null;
     prompt: string;
     size: string;
     quality: string;

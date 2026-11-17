@@ -11,9 +11,11 @@ use App\Exceptions\InsufficientCreditsException;
 use App\Exceptions\PixelforgeException;
 use App\Http\Requests\EstimateGenerationRequest;
 use App\Http\Requests\StoreGenerationRequest;
+use App\Http\Requests\UpdateGenerationRequest;
 use App\Http\Resources\GenerationResource;
 use App\Models\Generation;
 use App\Services\Generations\GenerationCreator;
+use App\Services\Generations\SlotAllocator;
 use App\Support\Money;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -47,6 +49,7 @@ class GenerationController extends Controller
                 'prompt' => StoreGenerationRequest::MAX_PROMPT_LENGTH,
                 'reference_images' => StoreGenerationRequest::MAX_REFERENCE_IMAGES,
             ],
+            'creditPacks' => config()->array('pixelforge.credit_packs_usd'),
             'prefill' => $source === null ? null : [
                 'prompt' => $source->prompt,
                 'size' => $source->size->value,
@@ -75,7 +78,7 @@ class GenerationController extends Controller
     public function store(StoreGenerationRequest $request, GenerationCreator $creator): RedirectResponse
     {
         try {
-            $creator->create(
+            $generation = $creator->create(
                 $this->authenticatedUser($request),
                 $request->string('prompt')->toString(),
                 $request->enum('size', GenerationSize::class) ?? GenerationSize::Square,
@@ -96,17 +99,32 @@ class GenerationController extends Controller
             ]);
         }
 
-        return to_route('generations.index');
+        return to_route('generations.index')->with('created_generation', $generation->id);
     }
 
-    public function index(Request $request): Response
+    public function index(Request $request, SlotAllocator $slots): Response
     {
         $generations = $this->authenticatedUser($request)->generations()->latest('id')->paginate(self::PER_PAGE);
 
         return Inertia::render('generations/Index', [
             'generations' => GenerationResource::collection($generations),
+            // Where each waiting generation stands in the line for a provider slot.
+            'queuePositions' => (object) $slots->positions(),
+            'justCreated' => $request->session()->get('created_generation'),
             'hasActive' => $this->authenticatedUser($request)->generations()->whereIn('status', GenerationStatus::active())->exists(),
         ]);
+    }
+
+    /**
+     * The one thing a user can change about a generation: its name.
+     */
+    public function update(UpdateGenerationRequest $request, Generation $generation): RedirectResponse
+    {
+        $title = $request->string('title')->trim()->toString();
+
+        $generation->update(['title' => $title === '' ? null : $title]);
+
+        return back();
     }
 
     /**

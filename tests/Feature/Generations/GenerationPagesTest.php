@@ -85,6 +85,7 @@ class GenerationPagesTest extends TestCase
                 ->has('qualities', 3)
                 ->where('limits.prompt', 4000)
                 ->where('limits.reference_images', 4)
+                ->where('creditPacks', [5, 10, 25])
                 ->where('prefill', null));
     }
 

@@ -13,6 +13,9 @@ Route::middleware('auth')->group(function () {
     Route::get('generations', [GenerationController::class, 'index'])->name('generations.index');
     Route::post('generations', [GenerationController::class, 'store'])->middleware('throttle:30,1')->name('generations.store');
     Route::get('generations/estimate', [GenerationController::class, 'estimate'])->name('generations.estimate');
+    Route::patch('generations/{generation}', [GenerationController::class, 'update'])
+        ->can('update', 'generation')
+        ->name('generations.update');
     Route::get('generations/{generation}/image', [GenerationController::class, 'image'])
         ->can('view', 'generation')
         ->name('generations.image');

@@ -13,4 +13,9 @@ class GenerationPolicy
     {
         return $generation->user_id === $user->id;
     }
+
+    public function update(User $user, Generation $generation): bool
+    {
+        return $generation->user_id === $user->id;
+    }
 }

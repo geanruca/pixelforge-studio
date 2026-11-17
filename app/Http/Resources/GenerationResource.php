@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources;
 
 use App\Enums\GenerationStatus;
+use App\Jobs\SubmitGeneration;
 use App\Models\Generation;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -19,13 +20,22 @@ class GenerationResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $awaitingSubmission = $this->status === GenerationStatus::Queued && $this->provider_id === null;
         $hasImage = $this->status === GenerationStatus::Succeeded
             && ($this->image_path !== null || $this->hasLiveProviderImage());
 
         return [
             'id' => $this->id,
             'status' => $this->status->value,
-            'awaiting_slot' => $this->status === GenerationStatus::Queued && $this->provider_id === null,
+            'awaiting_slot' => $awaitingSubmission,
+            // What the live card narrates while the user waits.
+            'progress' => [
+                'retry_attempt' => $awaitingSubmission ? $this->submission_failures : 0,
+                'max_attempts' => SubmitGeneration::MAX_SUBMISSION_FAILURES,
+                'accepted_at' => $this->submitted_at?->toIso8601String(),
+                'started_at' => $this->started_at?->toIso8601String(),
+            ],
+            'title' => $this->title,
             'prompt' => $this->prompt,
             'size' => $this->size->value,
             'quality' => $this->quality->value,
