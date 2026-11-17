@@ -132,16 +132,22 @@ The report compares each day with `GET /v1/usage` to the nanodollar and flags an
 
 Besides the automated suite, the deployed app was exercised against Pixelforge itself:
 
-| Scenario                                                                         | Result                                                                                |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `[succeed]`, plain prompts, Unicode prompt, reference image, all three qualities | charged the exact `usage × rates × 1.25`; image copied to our storage                 |
-| `[fail]`                                                                         | failed, hold released, "not charged"                                                  |
-| `[blocked]`                                                                      | rejected at submit, failed immediately with the content-policy message, hold released |
-| `[overloaded]`                                                                   | backs off, gives up after six attempts, hold released                                 |
-| `[slow]`                                                                         | stays "processing" for over a minute, then settles                                    |
-| `[duplicate]`                                                                    | every event delivered twice; second delivery answered `200 duplicate`, charged once   |
-| Eight submitted at once                                                          | three run, the rest wait for a slot and follow as slots free up                       |
-| Provider cost vs `GET /v1/usage`                                                 | identical to the nanodollar; ledger sum equals the balance                            |
+| Scenario                                                                         | Result                                                                                                                                     |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `[succeed]`, plain prompts, Unicode prompt, reference image, all three qualities | charged the exact `usage × rates × 1.25`; image copied to our storage                                                                      |
+| `[fail]`                                                                         | failed, hold released, "not charged"                                                                                                       |
+| `[blocked]`                                                                      | rejected at submit, failed immediately with the content-policy message, hold released                                                      |
+| `[overloaded]`                                                                   | backs off, gives up after six attempts, hold released                                                                                      |
+| `[slow]`                                                                         | stays "processing" for over a minute, then settles                                                                                         |
+| `[duplicate]`                                                                    | every event delivered twice; second delivery answered `200 duplicate`, charged once                                                        |
+| Eight submitted at once                                                          | three run, the rest wait for a slot and follow as slots free up                                                                            |
+| Two accounts at once: one sends five slow images, then the other sends one       | the single image is "next" in line, ahead of the first account's fourth and fifth                                                          |
+| The waiting screen                                                               | showed the place in line, then "Generating · running for 2s", took a name typed mid-wait, and announced the charge and the amount returned |
+| API: same `Idempotency-Key` twice                                                | `202` then `200` with `Idempotent-Replayed: true` and the same id; a different body with that key got `409`                                |
+| API: 70 requests in a burst                                                      | 60 answered `200`, the next 10 `429` with `Retry-After: 25`                                                                                |
+| API: signed image link                                                           | loads without a token, `image/png`                                                                                                         |
+| MCP: `tools/list` with a token, and without one                                  | five tools; `401` with a `WWW-Authenticate: Bearer` challenge                                                                              |
+| Provider cost vs `GET /v1/usage`                                                 | identical to the nanodollar after every run; ledger sum equals the balance; no generation charged twice                                    |
 
 ## Running it locally
 
