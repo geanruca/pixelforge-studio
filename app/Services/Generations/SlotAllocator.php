@@ -73,6 +73,14 @@ class SlotAllocator
     }
 
     /**
+     * How many of the provider's slots are taken right now.
+     */
+    public function inUse(): int
+    {
+        return $this->occupied()->count();
+    }
+
+    /**
      * The ids of the generations waiting for a slot, in the order they will
      * get one.
      *

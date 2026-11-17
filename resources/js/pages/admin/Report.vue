@@ -34,6 +34,13 @@ const props = defineProps<{
         totals: Sums & Reconciliation;
         pixelforge_available: boolean;
     };
+    operations: {
+        provider: { name: string; healthy: boolean; retry_in_seconds: number };
+        slots: { in_use: number; total: number; waiting: number };
+        stuck: number;
+        failures: { code: string; count: number }[];
+        failure_window_hours: number;
+    };
     maxRangeDays: number;
 }>();
 
@@ -63,6 +70,89 @@ const applyRange = (): void => {
             title="Spend, cost and profit"
             description="What users were charged, what Pixelforge billed us and the difference. Days are UTC days of completion, the same day Pixelforge bills on. Amounts are exact."
         />
+
+        <section aria-labelledby="operations-heading" data-test="operations">
+            <h3 id="operations-heading" class="mb-3 text-base font-medium">
+                Right now
+            </h3>
+            <dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="rounded-xl border p-4">
+                    <dt class="text-sm text-muted-foreground">Image service</dt>
+                    <dd
+                        class="text-lg font-semibold"
+                        :class="
+                            operations.provider.healthy
+                                ? 'text-emerald-700 dark:text-emerald-400'
+                                : 'text-red-700 dark:text-red-400'
+                        "
+                    >
+                        {{
+                            operations.provider.healthy
+                                ? 'Healthy'
+                                : `Paused, retry in ${operations.provider.retry_in_seconds}s`
+                        }}
+                    </dd>
+                    <dd class="text-xs text-muted-foreground">
+                        Circuit breaker on {{ operations.provider.name }}
+                    </dd>
+                </div>
+                <div class="rounded-xl border p-4">
+                    <dt class="text-sm text-muted-foreground">Slots in use</dt>
+                    <dd class="text-lg font-semibold tabular-nums">
+                        {{ operations.slots.in_use }} of
+                        {{ operations.slots.total }}
+                    </dd>
+                    <dd class="text-xs text-muted-foreground">
+                        {{ operations.slots.waiting }} waiting in line
+                    </dd>
+                </div>
+                <div class="rounded-xl border p-4">
+                    <dt class="text-sm text-muted-foreground">
+                        Possibly stuck
+                    </dt>
+                    <dd
+                        class="text-lg font-semibold tabular-nums"
+                        :class="{
+                            'text-red-700 dark:text-red-400':
+                                operations.stuck > 0,
+                        }"
+                    >
+                        {{ operations.stuck }}
+                    </dd>
+                    <dd class="text-xs text-muted-foreground">
+                        Unfinished for over ten minutes
+                    </dd>
+                </div>
+                <div class="rounded-xl border p-4">
+                    <dt class="text-sm text-muted-foreground">
+                        Failures, last
+                        {{ operations.failure_window_hours }} hours
+                    </dt>
+                    <dd
+                        v-if="operations.failures.length === 0"
+                        class="text-lg font-semibold"
+                    >
+                        None
+                    </dd>
+                    <dd v-else>
+                        <ul class="mt-1 space-y-0.5 text-sm">
+                            <li
+                                v-for="failure in operations.failures"
+                                :key="failure.code"
+                                class="flex justify-between gap-2"
+                            >
+                                <code class="truncate font-mono text-xs">{{
+                                    failure.code
+                                }}</code>
+                                <span class="tabular-nums">{{
+                                    failure.count
+                                }}</span>
+                            </li>
+                        </ul>
+                    </dd>
+                </div>
+            </dl>
+        </section>
 
         <form
             class="flex flex-wrap items-end gap-3"

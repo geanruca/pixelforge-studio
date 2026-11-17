@@ -4,6 +4,8 @@ namespace Tests\Feature\Admin;
 
 use App\Models\Generation;
 use App\Models\User;
+use App\Services\Pixelforge\PixelforgeClient;
+use App\Services\Resilience\CircuitBreaker;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -188,6 +190,49 @@ class ReportTest extends TestCase
         $this->actingAs($this->admin)->get(route('admin.report', ['start_date' => '2026-10-01', 'end_date' => '2026-10-31']))->assertOk();
 
         Http::assertSent(fn (Request $request): bool => $request['start_date'] === '2026-10-01' && $request['end_date'] === '2026-10-31');
+    }
+
+    public function test_the_operations_panel_shows_health_slots_the_line_and_recent_failures(): void
+    {
+        $this->fakeUsage([]);
+        $user = User::factory()->create();
+        Generation::factory()->for($user)->processing()->count(2)->create();
+        Generation::factory()->for($user)->count(3)->create();
+        Generation::factory()->for($user)->create(['created_at' => now()->subMinutes(11)]);
+        Generation::factory()->for($user)->failed('generation_failed')->count(2)->create();
+        Generation::factory()->for($user)->failed('content_policy_violation')->create();
+        Generation::factory()->for($user)->failed('internal_error')->create(['completed_at' => now()->subDays(2)]);
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.report'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('operations.provider.name', 'pixelforge')
+                ->where('operations.provider.healthy', true)
+                ->where('operations.slots.in_use', 2)
+                ->where('operations.slots.total', 3)
+                ->where('operations.slots.waiting', 4)
+                ->where('operations.stuck', 1)
+                ->where('operations.failures', [
+                    ['code' => 'generation_failed', 'count' => 2],
+                    ['code' => 'content_policy_violation', 'count' => 1],
+                ]));
+    }
+
+    public function test_the_operations_panel_says_when_the_provider_is_paused_by_the_circuit_breaker(): void
+    {
+        $this->fakeUsage([]);
+        foreach (range(1, 5) as $ignored) {
+            app(CircuitBreaker::class)->recordFailure(PixelforgeClient::NAME);
+        }
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.report'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('operations.provider.healthy', false)
+                ->where('operations.provider.retry_in_seconds', 30)
+                // The usage call is skipped while the circuit is open, and the page still renders.
+                ->where('report.pixelforge_available', false));
     }
 
     public function test_the_default_range_is_the_last_seven_days(): void
