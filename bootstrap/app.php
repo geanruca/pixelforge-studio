@@ -1,6 +1,8 @@
 <?php
 
 use App\Exceptions\ApiExceptionRenderer;
+use App\Exceptions\IdempotencyKeyReusedException;
+use App\Exceptions\InsufficientCreditsException;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
@@ -26,6 +28,12 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Outcomes a client is told about, not failures of ours: keep them out of the error log.
+        $exceptions->dontReport([
+            IdempotencyKeyReusedException::class,
+            InsufficientCreditsException::class,
+        ]);
+
         // Machine-facing doors always answer in JSON, whatever the client
         // put in its Accept header: a script must get a 401, not a redirect
         // to a login page.
