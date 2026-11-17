@@ -45,6 +45,13 @@ class PixelforgeStudioServerTest extends TestCase
         $this->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list'])
             ->assertUnauthorized()
             ->assertHeader('WWW-Authenticate');
+
+        // Even a client that does not ask for JSON gets a 401, never a redirect to the login page.
+        $this->call('POST', '/mcp', server: ['CONTENT_TYPE' => 'application/json'], content: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+            ->assertUnauthorized()
+            ->assertHeader('WWW-Authenticate')
+            ->assertJsonPath('error.code', 'invalid_api_token');
+        $this->get('/api/v1/balance')->assertUnauthorized()->assertJsonPath('error.code', 'invalid_api_token');
     }
 
     public function test_a_token_can_list_the_tools_over_json_rpc(): void

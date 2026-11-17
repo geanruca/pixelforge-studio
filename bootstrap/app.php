@@ -26,12 +26,15 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Machine-facing doors always answer in JSON, whatever the client
+        // put in its Accept header: a script must get a 401, not a redirect
+        // to a login page.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
+            fn (Request $request) => $request->is('api/*', 'mcp') || $request->expectsJson(),
         );
 
         $exceptions->render(
-            fn (Throwable $exception, Request $request) => $request->is('api/v1/*')
+            fn (Throwable $exception, Request $request) => $request->is('api/v1/*', 'mcp')
                 ? ApiExceptionRenderer::render($exception)
                 : null,
         );
