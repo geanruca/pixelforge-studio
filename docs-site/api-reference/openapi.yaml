@@ -1,0 +1,332 @@
+openapi: 3.1.0
+info:
+    title: Pixelforge Studio API
+    version: 1.0.0
+    description: >
+        Generate images and pay exactly what each one cost. Money is an exact
+        decimal string in US dollars with nine decimals, never a float.
+servers:
+    - url: https://pixelforge.24.199.64.10.sslip.io/api/v1
+security:
+    - bearerAuth: []
+tags:
+    - name: Credits
+    - name: Generations
+paths:
+    /balance:
+        get:
+            tags: [Credits]
+            operationId: getBalance
+            summary: Get the credit balance
+            description: Credits available to spend. Amounts reserved for generations in progress are not included.
+            responses:
+                '200':
+                    description: The balance.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Balance'
+                '401': { $ref: '#/components/responses/Unauthorized' }
+                '429': { $ref: '#/components/responses/RateLimited' }
+    /estimates:
+        post:
+            tags: [Credits]
+            operationId: createEstimate
+            summary: Estimate the price of a generation
+            description: Returns the price range of a generation without creating anything or reserving credits.
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenerationInput'
+            responses:
+                '200':
+                    description: The price range.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Estimate'
+                '401': { $ref: '#/components/responses/Unauthorized' }
+                '422': { $ref: '#/components/responses/ValidationFailed' }
+                '429': { $ref: '#/components/responses/RateLimited' }
+                '503': { $ref: '#/components/responses/PricingUnavailable' }
+    /generations:
+        get:
+            tags: [Generations]
+            operationId: listGenerations
+            summary: List generations
+            description: Your generations, newest first, with cursor pagination.
+            parameters:
+                - name: limit
+                  in: query
+                  schema:
+                      { type: integer, minimum: 1, maximum: 100, default: 20 }
+                - name: status
+                  in: query
+                  schema: { $ref: '#/components/schemas/Status' }
+                - name: cursor
+                  in: query
+                  description: The `next_cursor` of the previous page.
+                  schema: { type: string }
+            responses:
+                '200':
+                    description: A page of generations.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GenerationList'
+                '401': { $ref: '#/components/responses/Unauthorized' }
+                '422': { $ref: '#/components/responses/ValidationFailed' }
+                '429': { $ref: '#/components/responses/RateLimited' }
+        post:
+            tags: [Generations]
+            operationId: createGeneration
+            summary: Create a generation
+            description: >
+                Queues a generation and reserves its maximum price from your credits.
+                Returns at once; poll `GET /generations/{generation}` until the status
+                is `succeeded` or `failed`.
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: >
+                      Makes a retry safe. Repeating the request with the same key and
+                      body returns the existing generation (200) instead of creating a
+                      second one.
+                  schema: { type: string, minLength: 1, maxLength: 255 }
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenerationInput'
+            responses:
+                '202':
+                    description: The generation was created and queued.
+                    headers:
+                        Idempotent-Replayed:
+                            schema: { type: string, enum: ['false'] }
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Generation'
+                '200':
+                    description: Idempotent replay. The generation already existed and is returned in its current state.
+                    headers:
+                        Idempotent-Replayed:
+                            schema: { type: string, enum: ['true'] }
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Generation'
+                '401': { $ref: '#/components/responses/Unauthorized' }
+                '402': { $ref: '#/components/responses/InsufficientCredits' }
+                '409': { $ref: '#/components/responses/IdempotencyKeyReused' }
+                '422': { $ref: '#/components/responses/ValidationFailed' }
+                '429': { $ref: '#/components/responses/RateLimited' }
+                '503': { $ref: '#/components/responses/PricingUnavailable' }
+    /generations/{generation}:
+        get:
+            tags: [Generations]
+            operationId: getGeneration
+            summary: Get a generation
+            parameters:
+                - name: generation
+                  in: path
+                  required: true
+                  schema: { type: integer }
+            responses:
+                '200':
+                    description: The generation.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Generation'
+                '401': { $ref: '#/components/responses/Unauthorized' }
+                '404': { $ref: '#/components/responses/NotFound' }
+                '429': { $ref: '#/components/responses/RateLimited' }
+components:
+    securitySchemes:
+        bearerAuth:
+            type: http
+            scheme: bearer
+            description: A personal access token from Settings → API tokens.
+    schemas:
+        Money:
+            type: string
+            pattern: '^\d+\.\d{9}$'
+            description: An exact amount in US dollars with nine decimals.
+            example: '0.070625000'
+        Status:
+            type: string
+            enum: [queued, processing, succeeded, failed]
+        Size:
+            type: string
+            enum: ['1024x1024', '1536x1024', '1024x1536']
+        Quality:
+            type: string
+            enum: [low, medium, high]
+        GenerationInput:
+            type: object
+            required: [prompt, size, quality]
+            properties:
+                prompt:
+                    type: string
+                    maxLength: 4000
+                    example: A lighthouse at dawn
+                size: { $ref: '#/components/schemas/Size' }
+                quality: { $ref: '#/components/schemas/Quality' }
+                reference_images:
+                    type: array
+                    maxItems: 4
+                    items: { type: string, format: uri }
+        Balance:
+            type: object
+            required: [object, currency, available_usd]
+            properties:
+                object: { type: string, enum: [balance] }
+                currency: { type: string, enum: [usd] }
+                available_usd: { $ref: '#/components/schemas/Money' }
+        Estimate:
+            type: object
+            required:
+                [
+                    object,
+                    currency,
+                    minimum_price_usd,
+                    expected_price_usd,
+                    maximum_price_usd,
+                ]
+            properties:
+                object: { type: string, enum: [estimate] }
+                currency: { type: string, enum: [usd] }
+                minimum_price_usd: { $ref: '#/components/schemas/Money' }
+                expected_price_usd: { $ref: '#/components/schemas/Money' }
+                maximum_price_usd:
+                    allOf: [{ $ref: '#/components/schemas/Money' }]
+                    description: What is reserved when the generation is created.
+        Generation:
+            type: object
+            required:
+                - id
+                - object
+                - status
+                - title
+                - prompt
+                - size
+                - quality
+                - reference_images
+                - estimated_price_usd
+                - maximum_price_usd
+                - price_usd
+                - error
+                - image_url
+                - created_at
+                - completed_at
+            properties:
+                id: { type: integer }
+                object: { type: string, enum: [generation] }
+                status: { $ref: '#/components/schemas/Status' }
+                title:
+                    type: [string, 'null']
+                    description: A name given to the image in the app.
+                prompt: { type: string }
+                size: { $ref: '#/components/schemas/Size' }
+                quality: { $ref: '#/components/schemas/Quality' }
+                reference_images:
+                    type: array
+                    items: { type: string, format: uri }
+                estimated_price_usd: { $ref: '#/components/schemas/Money' }
+                maximum_price_usd:
+                    allOf: [{ $ref: '#/components/schemas/Money' }]
+                    description: The amount reserved until the generation finishes.
+                price_usd:
+                    oneOf:
+                        [
+                            { $ref: '#/components/schemas/Money' },
+                            { type: 'null' },
+                        ]
+                    description: What was charged. Null until the generation succeeds; a failed generation is never charged.
+                error:
+                    oneOf:
+                        - type: object
+                          required: [code, message]
+                          properties:
+                              code: { type: string, example: generation_failed }
+                              message: { type: string }
+                        - type: 'null'
+                image_url:
+                    type: [string, 'null']
+                    format: uri
+                    description: A signed link to the image, valid for one hour without a token.
+                created_at: { type: string, format: date-time }
+                completed_at: { type: [string, 'null'], format: date-time }
+        GenerationList:
+            type: object
+            required: [object, data, has_more, next_cursor]
+            properties:
+                object: { type: string, enum: [list] }
+                data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Generation' }
+                has_more: { type: boolean }
+                next_cursor: { type: [string, 'null'] }
+        Error:
+            type: object
+            required: [error]
+            properties:
+                error:
+                    type: object
+                    required: [type, code, message]
+                    properties:
+                        type: { type: string }
+                        code: { type: string }
+                        message: { type: string }
+                        param: { type: string }
+                        errors:
+                            type: object
+                            additionalProperties:
+                                type: array
+                                items: { type: string }
+                        required_usd: { $ref: '#/components/schemas/Money' }
+                        available_usd: { $ref: '#/components/schemas/Money' }
+    responses:
+        Unauthorized:
+            description: '`invalid_api_token`: the token is missing, malformed, expired or revoked.'
+            content:
+                application/json:
+                    schema: { $ref: '#/components/schemas/Error' }
+        InsufficientCredits:
+            description: '`insufficient_credits`: the balance does not cover the maximum price. Nothing was created.'
+            content:
+                application/json:
+                    schema: { $ref: '#/components/schemas/Error' }
+        NotFound:
+            description: '`not_found`: the generation does not exist or belongs to another account.'
+            content:
+                application/json:
+                    schema: { $ref: '#/components/schemas/Error' }
+        IdempotencyKeyReused:
+            description: '`idempotency_key_reused`: the key was used before with a different body.'
+            content:
+                application/json:
+                    schema: { $ref: '#/components/schemas/Error' }
+        ValidationFailed:
+            description: '`validation_failed`: a parameter is missing or invalid.'
+            content:
+                application/json:
+                    schema: { $ref: '#/components/schemas/Error' }
+        RateLimited:
+            description: '`rate_limit_exceeded`: more than 60 requests in a minute.'
+            headers:
+                Retry-After:
+                    schema: { type: integer }
+            content:
+                application/json:
+                    schema: { $ref: '#/components/schemas/Error' }
+        PricingUnavailable:
+            description: '`pricing_unavailable`: prices could not be confirmed, so nothing was created or reserved.'
+            content:
+                application/json:
+                    schema: { $ref: '#/components/schemas/Error' }

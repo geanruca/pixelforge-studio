@@ -1,0 +1,65 @@
+---
+title: 'Quickstart'
+description: 'From a token to a finished image in four requests.'
+---
+
+<Steps>
+  <Step title="Create a token">
+    In the app, open **Settings → API tokens**, name a token and copy it. It is shown once. You also need credits: press **Buy credits** on the Credits page (the demo checkout is free).
+  </Step>
+  <Step title="Estimate the price">
+    ```bash
+    curl https://pixelforge.24.199.64.10.sslip.io/api/v1/estimates \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"prompt": "A lighthouse at dawn", "size": "1024x1024", "quality": "medium"}'
+    ```
+
+    ```json
+    {
+      "object": "estimate",
+      "currency": "usd",
+      "minimum_price_usd": "0.058150000",
+      "expected_price_usd": "0.072218750",
+      "maximum_price_usd": "0.086287500"
+    }
+    ```
+
+  </Step>
+  <Step title="Create the generation">
+    Send an `Idempotency-Key` so that a retry after a timeout can never create, or reserve credits for, a second image.
+
+    ```bash
+    curl https://pixelforge.24.199.64.10.sslip.io/api/v1/generations \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -H "Idempotency-Key: order-42" \
+      -d '{"prompt": "A lighthouse at dawn", "size": "1024x1024", "quality": "medium"}'
+    ```
+
+    The answer is `202 Accepted` with the generation in status `queued`.
+
+  </Step>
+  <Step title="Poll until it finishes">
+    ```bash
+    curl https://pixelforge.24.199.64.10.sslip.io/api/v1/generations/17 \
+      -H "Authorization: Bearer $TOKEN"
+    ```
+
+    ```json
+    {
+      "id": 17,
+      "object": "generation",
+      "status": "succeeded",
+      "estimated_price_usd": "0.072218750",
+      "maximum_price_usd": "0.086287500",
+      "price_usd": "0.070625000",
+      "image_url": "https://pixelforge.24.199.64.10.sslip.io/generations/17/image/signed?expires=…&signature=…",
+      "error": null
+    }
+    ```
+
+    `image_url` is a signed link that works for one hour without a token. Read the generation again for a fresh one.
+
+  </Step>
+</Steps>

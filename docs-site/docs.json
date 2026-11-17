@@ -1,0 +1,72 @@
+{
+    "$schema": "https://mintlify.com/docs.json",
+    "theme": "mint",
+    "name": "Pixelforge Studio",
+    "description": "REST API and MCP server of Pixelforge Studio: generate images and pay exactly what each one cost.",
+    "colors": {
+        "primary": "#0284C7",
+        "light": "#38BDF8",
+        "dark": "#0369A1"
+    },
+    "api": {
+        "openapi": "api-reference/openapi.yaml",
+        "playground": { "display": "interactive" },
+        "examples": { "languages": ["curl", "javascript", "python", "php"] }
+    },
+    "navigation": {
+        "tabs": [
+            {
+                "tab": "Guides",
+                "groups": [
+                    {
+                        "group": "Getting started",
+                        "pages": ["index", "quickstart"]
+                    },
+                    {
+                        "group": "Concepts",
+                        "pages": [
+                            "authentication",
+                            "pricing-and-credits",
+                            "idempotency",
+                            "errors"
+                        ]
+                    }
+                ]
+            },
+            {
+                "tab": "API reference",
+                "openapi": "api-reference/openapi.yaml",
+                "groups": [
+                    {
+                        "group": "Reference",
+                        "pages": ["api-reference/introduction"]
+                    },
+                    {
+                        "group": "Credits",
+                        "pages": ["GET /balance", "POST /estimates"]
+                    },
+                    {
+                        "group": "Generations",
+                        "pages": [
+                            "POST /generations",
+                            "GET /generations",
+                            "GET /generations/{generation}"
+                        ]
+                    }
+                ]
+            },
+            {
+                "tab": "MCP server",
+                "groups": [
+                    {
+                        "group": "MCP",
+                        "pages": ["mcp/overview", "mcp/connect", "mcp/tools"]
+                    }
+                ]
+            }
+        ]
+    },
+    "footer": {
+        "socials": { "github": "https://github.com/geanruca/pixelforge-studio" }
+    }
+}

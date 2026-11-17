@@ -1,0 +1,21 @@
+---
+title: 'MCP server'
+description: 'Let an AI agent generate images on your account.'
+---
+
+The MCP server exposes the same account as the API to agents that speak the [Model Context Protocol](https://modelcontextprotocol.io), such as Claude Code, Claude Desktop and Cursor.
+
+- Endpoint: `https://pixelforge.24.199.64.10.sslip.io/mcp` (streamable HTTP)
+- Authentication: the same [personal access tokens](/authentication) as the API
+- Rate limit: shared with the API, 60 requests per minute per account
+
+## What an agent is told
+
+The server instructs the agent to:
+
+- estimate the price and tell you before generating, because `generate_image` spends credits;
+- call `generate_image` only when you asked for an image;
+- poll `get_generation` instead of generating again while an image is in progress;
+- report prices exactly as returned, without rounding.
+
+Failed generations cost nothing, and an agent that retries `generate_image` with the same `idempotency_key` is charged once.

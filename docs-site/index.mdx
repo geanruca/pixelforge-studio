@@ -1,0 +1,33 @@
+---
+title: 'Pixelforge Studio API'
+description: 'Generate images from your own code or from an AI agent, and pay exactly what each one cost.'
+---
+
+Pixelforge Studio has three doors to the same account, the same credits and the same prices:
+
+<CardGroup cols={3}>
+    <Card title="Web app" icon="browser">
+        Generate, watch progress live, see every charge.
+    </Card>
+    <Card title="REST API" icon="code" href="/quickstart">
+        Five endpoints, JSON, bearer tokens.
+    </Card>
+    <Card title="MCP server" icon="robot" href="/mcp/overview">
+        Five tools for Claude Code, Claude Desktop or Cursor.
+    </Card>
+</CardGroup>
+
+## How it works
+
+1. **Estimate.** The price of an image is only known once it is done, so you get a range: minimum, expected and maximum.
+2. **Create.** The maximum price is reserved from your credits and the generation is queued. The call returns at once.
+3. **Poll.** Read the generation until its status is `succeeded` or `failed`. It usually takes 5 to 30 seconds, and up to about a minute and a half.
+4. **Settle.** On success you are charged the actual price and the rest of the reservation returns to your balance. A failed generation costs nothing.
+
+## Conventions
+
+- Base URL: `https://pixelforge.24.199.64.10.sslip.io/api/v1`
+- Requests and responses are JSON.
+- Money is an **exact decimal string** in US dollars with nine decimals, such as `"0.070625000"`. It is never a float: parse it with a decimal type.
+- Timestamps are ISO 8601 in UTC.
+- 60 requests per minute per account. See [Errors](/errors) for `rate_limit_exceeded`.

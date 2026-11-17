@@ -1,0 +1,32 @@
+---
+title: 'Pricing and credits'
+description: 'Why the price is a range, what is reserved, and what you are charged.'
+---
+
+Credits are US dollars. An image costs what the image service bills for it plus a 25% markup, and nothing is rounded to cents: a typical image costs between one and ten cents, so rounding each one would distort its price.
+
+## The price is a range until the image is done
+
+Part of the cost depends on how many tokens the model ends up using, which is only known on completion. Before that you get three numbers:
+
+| Field                | Meaning                                                      |
+| -------------------- | ------------------------------------------------------------ |
+| `minimum_price_usd`  | The least it can cost.                                       |
+| `expected_price_usd` | The most likely price. This is the estimate shown to people. |
+| `maximum_price_usd`  | The most it can cost. **This is what gets reserved.**        |
+
+## Reserve, then charge
+
+| When                    | What happens to your credits                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| You create a generation | `maximum_price_usd` is reserved. If your balance does not cover it, nothing is created and you get `402 insufficient_credits`. |
+| It succeeds             | You are charged `price_usd`, the actual price. The rest of the reservation returns to your balance.                            |
+| It fails                | The whole reservation returns. **A failed generation costs nothing.**                                                          |
+
+Reserving the maximum means your balance can never go negative, however many generations you have in flight.
+
+## Reading money
+
+Amounts are exact decimal strings with nine decimals (`"0.070625000"`). Parse them with a decimal type (`Decimal` in Python, `BigDecimal` in Java, `bcmath` in PHP). Do not parse them as floats: `0.1 + 0.2` is not `0.3` in floating point.
+
+`GET /balance` returns the credits available to spend. Amounts reserved for generations in progress are not included.

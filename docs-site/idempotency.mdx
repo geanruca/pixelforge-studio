@@ -1,0 +1,28 @@
+---
+title: 'Idempotency'
+description: 'Retry a create safely: one key, one generation, one reservation.'
+---
+
+Networks fail in the worst place: after the server acted and before you heard about it. If you retry a `POST /generations` blindly you may pay for two images.
+
+Send an `Idempotency-Key` header (any string up to 255 characters, for example a UUID or your own order id):
+
+```http
+POST /api/v1/generations
+Idempotency-Key: order-42
+```
+
+| You send                           | You get                                                                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| A key for the first time           | `202`, a new generation, header `Idempotent-Replayed: false`.                                                                    |
+| The same key with the same body    | `200`, the **existing** generation in its current state, header `Idempotent-Replayed: true`. Nothing new is created or reserved. |
+| The same key with a different body | `409 idempotency_key_reused`.                                                                                                    |
+
+Keys are scoped to your account and do not expire. Two requests with the same key that arrive at the same instant still produce one generation: the second one waits and receives the first one's result.
+
+Without the header every request creates a generation.
+
+<Note>
+    The MCP tool `generate_image` takes the same key as its `idempotency_key`
+    argument.
+</Note>

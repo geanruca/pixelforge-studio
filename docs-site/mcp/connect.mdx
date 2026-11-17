@@ -1,0 +1,54 @@
+---
+title: 'Connect a client'
+description: 'Claude Code, Claude Desktop or Cursor.'
+---
+
+Create a token in **Settings → API tokens**. That page shows these same snippets with your token filled in.
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```bash
+    claude mcp add --transport http pixelforge-studio https://pixelforge.24.199.64.10.sslip.io/mcp \
+      --header "Authorization: Bearer <YOUR_TOKEN>"
+    ```
+
+    Run `/mcp` inside Claude Code: `pixelforge-studio` should show as connected.
+
+  </Tab>
+  <Tab title="Claude Desktop">
+    Open **Settings → Developer → Edit Config** and add the server. Claude Desktop reaches remote servers through [`mcp-remote`](https://www.npmjs.com/package/mcp-remote), which needs Node.js.
+
+    ```json claude_desktop_config.json
+    {
+      "mcpServers": {
+        "pixelforge-studio": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "mcp-remote",
+            "https://pixelforge.24.199.64.10.sslip.io/mcp",
+            "--header",
+            "Authorization: Bearer <YOUR_TOKEN>"
+          ]
+        }
+      }
+    }
+    ```
+
+  </Tab>
+  <Tab title="Cursor">
+    Add the server to `~/.cursor/mcp.json`:
+
+    ```json mcp.json
+    {
+      "mcpServers": {
+        "pixelforge-studio": {
+          "url": "https://pixelforge.24.199.64.10.sslip.io/mcp",
+          "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }
+        }
+      }
+    }
+    ```
+
+  </Tab>
+</Tabs>

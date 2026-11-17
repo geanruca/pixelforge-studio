@@ -1,0 +1,38 @@
+---
+title: 'Tools'
+description: 'The five tools the server exposes.'
+---
+
+{/* Keep in step with app/Mcp/Tools; Tests\Feature\Api\OpenApiContractTest checks the names. */}
+
+| Tool               | Spends credits | What it does                                                                              |
+| ------------------ | -------------- | ----------------------------------------------------------------------------------------- |
+| `get_balance`      | No             | Credits available to spend.                                                               |
+| `estimate_price`   | No             | Minimum, expected and maximum price of a generation.                                      |
+| `generate_image`   | **Yes**        | Starts a generation and reserves its maximum price. Returns at once with the id.          |
+| `get_generation`   | No             | Status, estimated and actual price, failure reason, and an image link valid for one hour. |
+| `list_generations` | No             | Recent generations, newest first, optionally by status.                                   |
+
+## Arguments
+
+`estimate_price` and `generate_image` take the same description of the image:
+
+| Argument           | Type             | Notes                                      |
+| ------------------ | ---------------- | ------------------------------------------ |
+| `prompt`           | string, required | Up to 4,000 characters.                    |
+| `size`             | string, required | `1024x1024`, `1536x1024` or `1024x1536`.   |
+| `quality`          | string, required | `low`, `medium` or `high`.                 |
+| `reference_images` | array of URLs    | Optional, at most 4, http(s).              |
+| `idempotency_key`  | string           | `generate_image` only. Makes a retry safe. |
+
+`get_generation` takes `generation_id`. `list_generations` takes optional `status` and `limit` (1 to 50, default 10).
+
+## A typical exchange
+
+> **You:** Make me a square image of a lighthouse at dawn, medium quality.
+>
+> **Agent** calls `estimate_price` → "About $0.0722, at most $0.0863. Shall I go ahead?"
+>
+> **You:** Yes.
+>
+> **Agent** calls `generate_image`, then `get_generation` every few seconds → "Done. It cost $0.070625000. Here is the image: …"

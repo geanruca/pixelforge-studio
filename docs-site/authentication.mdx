@@ -1,0 +1,21 @@
+---
+title: 'Authentication'
+description: 'Personal access tokens, sent as a bearer token.'
+---
+
+Every request carries a personal access token:
+
+```http
+Authorization: Bearer <YOUR_TOKEN>
+```
+
+Create and revoke tokens in **Settings → API tokens**. Because a token can spend your credits:
+
+- The app asks for your password again before showing that page.
+- A token is shown **once**. Only its hash is stored, so it cannot be recovered, only replaced.
+- Tokens expire **90 days** after they are created.
+- Revoking a token takes effect immediately.
+
+A missing, malformed, expired or revoked token answers `401` with the code `invalid_api_token`.
+
+The same tokens authenticate the [MCP server](/mcp/overview).

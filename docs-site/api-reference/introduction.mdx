@@ -1,0 +1,18 @@
+---
+title: 'API reference'
+description: 'Five endpoints under /api/v1.'
+---
+
+Base URL: `https://pixelforge.24.199.64.10.sslip.io/api/v1`
+
+| Endpoint                        | Purpose                                            |
+| ------------------------------- | -------------------------------------------------- |
+| `GET /balance`                  | Credits available to spend.                        |
+| `POST /estimates`               | Price range of a generation, without creating it.  |
+| `POST /generations`             | Create a generation and reserve its maximum price. |
+| `GET /generations`              | List your generations, newest first.               |
+| `GET /generations/{generation}` | Read one generation: status, price, image link.    |
+
+All of them need a [token](/authentication), return JSON, and report failures in the shape described in [Errors](/errors).
+
+This reference is generated from `openapi.yaml`, and a test in the application fails if a route and the specification disagree.

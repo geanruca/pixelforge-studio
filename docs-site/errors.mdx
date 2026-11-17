@@ -1,0 +1,40 @@
+---
+title: 'Errors'
+description: 'One shape, stable codes.'
+---
+
+Every error has the same shape. Branch on `code`; `message` is for people.
+
+```json
+{
+    "error": {
+        "type": "invalid_request_error",
+        "code": "validation_failed",
+        "message": "The selected size is invalid.",
+        "param": "size",
+        "errors": { "size": ["The selected size is invalid."] }
+    }
+}
+```
+
+| HTTP | Code                     | Meaning                                                                                                        | What to do                      |
+| ---- | ------------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 401  | `invalid_api_token`      | Token missing, malformed, expired or revoked.                                                                  | Create a new token.             |
+| 402  | `insufficient_credits`   | The balance does not cover the maximum price. Carries `required_usd` and `available_usd`. Nothing was created. | Buy credits, then retry.        |
+| 404  | `not_found`              | The resource does not exist or belongs to another account.                                                     | Check the id.                   |
+| 409  | `idempotency_key_reused` | The `Idempotency-Key` was used before with a different body.                                                   | Use a new key.                  |
+| 422  | `validation_failed`      | A parameter is missing or invalid. `param` names the first one.                                                | Fix the request.                |
+| 429  | `rate_limit_exceeded`    | More than 60 requests in a minute.                                                                             | Wait the `Retry-After` seconds. |
+| 503  | `pricing_unavailable`    | Prices could not be confirmed, so nothing was created or reserved.                                             | Retry shortly.                  |
+
+## When a generation fails
+
+A failed generation is not an HTTP error: the request to read it succeeds and the object carries the reason. It never costs anything.
+
+| `error.code`               | Meaning                                                  |
+| -------------------------- | -------------------------------------------------------- |
+| `content_policy_violation` | The prompt was rejected by the content policy.           |
+| `generation_failed`        | The model could not produce an image for this prompt.    |
+| `internal_error`           | The image service failed. Trying again usually works.    |
+| `daily_limit_exceeded`     | The service's daily limit was reached.                   |
+| `submission_timeout`       | The image service stayed too busy to accept the request. |
