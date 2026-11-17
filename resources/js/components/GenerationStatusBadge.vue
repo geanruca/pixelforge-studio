@@ -12,9 +12,7 @@ const presentation = computed(() => {
     switch (props.status) {
         case 'queued':
             return {
-                label: props.awaitingSlot
-                    ? 'Waiting to start'
-                    : 'Queued',
+                label: props.awaitingSlot ? 'Waiting to start' : 'Queued',
                 icon: Clock,
                 classes:
                     'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200',

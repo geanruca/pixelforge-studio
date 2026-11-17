@@ -48,11 +48,11 @@ refused loudly instead of rounded (`App\Support\Money`).
 **Sub-cent amounts are charged exactly, not rounded to cents.** A typical generation costs under a
 cent to seven cents; rounding each to $0.01 would either give work away or multiply its price. Balances
 and charges keep full precision, the UI shows four decimals (exact value on hover), and the only rounding
-is *up* to a whole nanodollar when the 25% does not divide evenly, so the margin is never below 25%.
+is _up_ to a whole nanodollar when the 25% does not divide evenly, so the margin is never below 25%.
 
 **The estimate is a range, and the worst case is put on hold.** Text tokens vary ±15% and reasoning
 tokens anywhere in the quality's range, so the price is only known at completion. The page shows the
-expected price and the low–high range; submitting holds the *maximum* on the balance. On completion the
+expected price and the low–high range; submitting holds the _maximum_ on the balance. On completion the
 hold is released and the actual price charged in the same transaction. A user can therefore never spend
 credits they do not have, even with several generations in flight.
 
@@ -69,7 +69,7 @@ after six attempts with the hold refunded. The user sees the generation as queue
 
 **"We gave up" is not the same as "it failed".** A timed-out create may have been accepted. Rejections
 Pixelforge states explicitly (content policy, validation, daily limit) are final; giving up after
-timeouts is recorded as *unconfirmed*, the hold is refunded, and if Pixelforge later delivers the image
+timeouts is recorded as _unconfirmed_, the hold is refunded, and if Pixelforge later delivers the image
 its webhook is still applied and billed. A final state that Pixelforge itself confirmed never changes.
 
 **Webhooks are a fast path, not the only path.** Delivery is at-least-once but all six attempts can
@@ -96,16 +96,16 @@ The report compares each day with `GET /v1/usage` to the nanodollar and flags an
 
 Besides the automated suite, the deployed app was exercised against Pixelforge itself:
 
-| Scenario | Result |
-|---|---|
-| `[succeed]`, plain prompts, Unicode prompt, reference image, all three qualities | charged the exact `usage × rates × 1.25`; image copied to our storage |
-| `[fail]` | failed, hold released, "not charged" |
-| `[blocked]` | rejected at submit, failed immediately with the content-policy message, hold released |
-| `[overloaded]` | backs off, gives up after six attempts, hold released |
-| `[slow]` | stays "processing" for over a minute, then settles |
-| `[duplicate]` | every event delivered twice; second delivery answered `200 duplicate`, charged once |
-| Eight submitted at once | three run, the rest wait for a slot and follow as slots free up |
-| Provider cost vs `GET /v1/usage` | identical to the nanodollar; ledger sum equals the balance |
+| Scenario                                                                         | Result                                                                                |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `[succeed]`, plain prompts, Unicode prompt, reference image, all three qualities | charged the exact `usage × rates × 1.25`; image copied to our storage                 |
+| `[fail]`                                                                         | failed, hold released, "not charged"                                                  |
+| `[blocked]`                                                                      | rejected at submit, failed immediately with the content-policy message, hold released |
+| `[overloaded]`                                                                   | backs off, gives up after six attempts, hold released                                 |
+| `[slow]`                                                                         | stays "processing" for over a minute, then settles                                    |
+| `[duplicate]`                                                                    | every event delivered twice; second delivery answered `200 duplicate`, charged once   |
+| Eight submitted at once                                                          | three run, the rest wait for a slot and follow as slots free up                       |
+| Provider cost vs `GET /v1/usage`                                                 | identical to the nanodollar; ledger sum equals the balance                            |
 
 ## Running it locally
 
@@ -136,14 +136,14 @@ npm run types:check    # vue-tsc
 
 ## Map of the code
 
-| Concern | Where |
-|---|---|
-| Exact money | `app/Support/Money.php` |
-| Rates, token rules, estimates, markup | `app/Services/Pricing/` |
-| Pixelforge HTTP client, snapshot, signature | `app/Services/Pixelforge/` |
-| State machine and billing on completion | `app/Services/Generations/GenerationSynchronizer.php` |
-| Balance, holds, charges | `app/Services/Credits/CreditLedger.php` |
-| Submission with retries | `app/Jobs/SubmitGeneration.php` |
-| Webhook endpoint | `app/Http/Controllers/PixelforgeWebhookController.php` |
-| Polling safety net | `app/Console/Commands/ReconcileGenerations.php` |
-| Operator report | `app/Services/Reports/SpendReport.php` |
+| Concern                                     | Where                                                  |
+| ------------------------------------------- | ------------------------------------------------------ |
+| Exact money                                 | `app/Support/Money.php`                                |
+| Rates, token rules, estimates, markup       | `app/Services/Pricing/`                                |
+| Pixelforge HTTP client, snapshot, signature | `app/Services/Pixelforge/`                             |
+| State machine and billing on completion     | `app/Services/Generations/GenerationSynchronizer.php`  |
+| Balance, holds, charges                     | `app/Services/Credits/CreditLedger.php`                |
+| Submission with retries                     | `app/Jobs/SubmitGeneration.php`                        |
+| Webhook endpoint                            | `app/Http/Controllers/PixelforgeWebhookController.php` |
+| Polling safety net                          | `app/Console/Commands/ReconcileGenerations.php`        |
+| Operator report                             | `app/Services/Reports/SpendReport.php`                 |
