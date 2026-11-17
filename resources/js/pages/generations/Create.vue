@@ -253,7 +253,7 @@ const creditsError = computed(() => serverErrors.value.credits);
                             :class="part.keyword?.classes"
                             :title="part.keyword?.hint"
                         >
-                            {{ part.text }}
+                            {{ part.text.slice(1, -1) }}
                         </span>
                     </p>
                     <InputError
